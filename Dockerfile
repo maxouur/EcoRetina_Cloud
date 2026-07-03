@@ -34,8 +34,8 @@ CMD Xvfb :1 -screen 0 1280x800x24 & \
     sleep 2 && \
     fluxbox & \
     sleep 1 && \
-    x11vnc -display :1 -nopw -forever -listen localhost -shared & \
+    x11vnc -display :1 -nopw -forever -shared & \
     sleep 1 && \
-    /usr/share/novnc/utils/launch.sh --vnc localhost:5900 --listen 8080 --web /usr/share/novnc & \
+    /usr/share/novnc/utils/launch.sh --vnc localhost:5900 --listen 8080 & \
     sleep 2 && \
     python GUI_EcoRetina_IAagent.py
