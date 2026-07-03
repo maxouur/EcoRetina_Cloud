@@ -18,16 +18,19 @@ sleep 3
 fluxbox &
 sleep 2
 
-# 4. Lancer le serveur graphique x11vnc
+# 4. Lancer le serveur graphique x11vnc sur le port 5900
 x11vnc -display :0 -nopw -forever -shared -listen 127.0.0.1 &
 sleep 2
 
-# 5. On lance websockify en PREMIER PLAN (priorité absolue pour Render)
-# Il va ouvrir le port et valider le statut LIVE de Render
-python3 -m websockify --web /usr/share/novnc 0.0.0.0:$PORT 127.0.0.1:5900 --web-path=/websockify &
-sleep 3
+# 5. Lancer le proxy noVNC en arrière-plan sur le port 6080
+/usr/share/novnc/utils/novnc_proxy --vnc 127.0.0.1:5900 --listen 6080 &
+sleep 2
 
-# 6. On lance ton application CustomTkinter en arrière-plan
-# Si elle crash, elle écrira l'erreur directement dans les logs Render
-echo "Démarrage de l'application Python..."
-python GUI_EcoRetina_IAagent.py 2>&1
+# 6. Lancer ton logiciel CustomTkinter en arrière-plan
+python GUI_EcoRetina_AIagent.py &
+sleep 2
+
+# 7. Le Bouclier Render : Serveur Web Python officiel sur le port demandé
+# Il va servir les fichiers de noVNC directement à Render
+cd /usr/share/novnc
+python3 -m http.server $PORT
