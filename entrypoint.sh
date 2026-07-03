@@ -6,7 +6,7 @@ set -e
 # 1. Configurer l'affichage sur le Display :0
 export DISPLAY=:0
 
-# Nettoyage des verrous système au démarrage
+# Nettoyage des verrous système
 rm -f /tmp/.X0-lock
 rm -f /tmp/.X11-unix/X0
 
@@ -18,7 +18,7 @@ sleep 3
 fluxbox &
 sleep 2
 
-# 4. Lancer le serveur graphique x11vnc uniquement sur localhost
+# 4. Lancer le serveur graphique x11vnc
 x11vnc -display :0 -nopw -forever -shared -listen 127.0.0.1 &
 sleep 2
 
@@ -26,5 +26,7 @@ sleep 2
 python GUI_EcoRetina_IAagent.py &
 sleep 2
 
-# 6. Lancer noVNC en le forçant à écouter sur toutes les interfaces IPv4 (0.0.0.0)
-/usr/share/novnc/utils/novnc_proxy --vnc 127.0.0.1:5900 --listen $PORT
+# 6. L'ALCHIMIE NETFLIX/RENDER : Websockify direct
+# Il prend le flux vidéo local (5900) et le transforme en site web sur le port Render
+# On lui dit de servir directement l'interface graphique incluse dans noVNC
+python3 -m websockify --web /usr/share/novnc 0.0.0.0:$PORT 127.0.0.1:5900
