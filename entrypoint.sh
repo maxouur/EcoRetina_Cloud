@@ -10,6 +10,6 @@ sleep 1
 x11vnc -display :1 -nopw -forever -shared -listen localhost &
 sleep 1
 
-# 3. Lancement direct du pont Web noVNC sur le port exigé par Render
-# (Plus besoin de serveur Python secondaire, noVNC gère tout seul)
-/usr/share/novnc/utils/launch.sh --vnc localhost:5900 --listen $PORT
+# 3. Lancement du pont Web noVNC officiel et mis à jour
+# On utilise la commande standard 'novnc_proxy' qui remplace 'launch.sh'
+novnc_proxy --vnc localhost:5900 --listen $PORT
