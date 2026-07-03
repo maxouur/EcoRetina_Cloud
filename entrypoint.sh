@@ -23,7 +23,7 @@ x11vnc -display :0 -nopw -forever -shared -listen 127.0.0.1 &
 sleep 2
 
 # 5. Lancer ton vrai logiciel CustomTkinter en arrière-plan
-python GUI_EcoRetina_AIagent.py &
+python GUI_EcoRetina_IAagent.py &
 sleep 2
 
 # 6. Lancer noVNC en le forçant à écouter sur toutes les interfaces IPv4 (0.0.0.0)
