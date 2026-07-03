@@ -22,11 +22,12 @@ sleep 2
 x11vnc -display :0 -nopw -forever -shared -listen 127.0.0.1 &
 sleep 2
 
-# 5. Lancer ton vrai logiciel CustomTkinter en arrière-plan
-python GUI_EcoRetina_IAagent.py &
-sleep 2
+# 5. On lance websockify en PREMIER PLAN (priorité absolue pour Render)
+# Il va ouvrir le port et valider le statut LIVE de Render
+python3 -m websockify --web /usr/share/novnc 0.0.0.0:$PORT 127.0.0.1:5900 --web-path=/websockify &
+sleep 3
 
-# 6. L'ALCHIMIE NETFLIX/RENDER : Websockify direct
-# Il prend le flux vidéo local (5900) et le transforme en site web sur le port Render
-# On lui dit de servir directement l'interface graphique incluse dans noVNC
-python3 -m websockify --web /usr/share/novnc 0.0.0.0:$PORT 127.0.0.1:5900 --web-path=/websockify
+# 6. On lance ton application CustomTkinter en arrière-plan
+# Si elle crash, elle écrira l'erreur directement dans les logs Render
+echo "Démarrage de l'application Python..."
+python GUI_EcoRetina_IAagent.py 2>&1
