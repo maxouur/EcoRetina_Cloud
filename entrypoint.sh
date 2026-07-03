@@ -3,13 +3,14 @@
 # En cas d'erreur, on continue
 set -e
 
-# 1. Configurer et forcer l'affichage sur le Display :0
+# 1. Configurer l'affichage sur le Display :0
 export DISPLAY=:0
 
-# Supprimer d'éventuels verrous d'une session précédente
+# Nettoyage des verrous système au démarrage
 rm -f /tmp/.X0-lock
+rm -f /tmp/.X11-unix/X0
 
-# 2. Lancer l'écran virtuel (Xvfb) sur le display :0
+# 2. Lancer l'écran virtuel (Xvfb)
 Xvfb :0 -screen 0 1280x800x24 &
 sleep 3
 
@@ -17,13 +18,13 @@ sleep 3
 fluxbox &
 sleep 2
 
-# 4. Lancer le serveur graphique x11vnc sur le display :0
-x11vnc -display :0 -nopw -forever -shared &
+# 4. Lancer le serveur graphique x11vnc uniquement sur localhost
+x11vnc -display :0 -nopw -forever -shared -listen 127.0.0.1 &
 sleep 2
 
 # 5. Lancer ton vrai logiciel CustomTkinter en arrière-plan
 python GUI_EcoRetina_AIagent.py &
 sleep 2
 
-# 6. Lancer le proxy de noVNC via son chemin Linux absolu
-/usr/share/novnc/utils/novnc_proxy --vnc localhost:5900 --listen $PORT
+# 6. Lancer noVNC en le forçant à écouter sur toutes les interfaces IPv4 (0.0.0.0)
+/usr/share/novnc/utils/novnc_proxy --vnc 127.0.0.1:5900 --listen $PORT
