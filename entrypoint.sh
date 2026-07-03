@@ -27,7 +27,7 @@ sleep 2
 sleep 2
 
 # 6. Lancer ton logiciel CustomTkinter en arrière-plan
-python GUI_EcoRetina_AIagent.py &
+python GUI_EcoRetina_IAagent.py &
 sleep 2
 
 # 7. Le Bouclier Render : Serveur Web Python officiel sur le port demandé
