@@ -1,0 +1,11 @@
+scikit-learn
+pandas
+numpy
+xgboost
+statsmodels
+scipy
+codecarbon
+matplotlib
+google-genai
+customtkinter
+pillow
