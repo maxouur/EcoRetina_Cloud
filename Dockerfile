@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Configurer l'écran virtuel
-ENV DISPLAY=:1
+ENV DISPLAY=:0
 # Rendre le script exécutable
 RUN chmod +x entrypoint.sh
 
