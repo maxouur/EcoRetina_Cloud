@@ -10,14 +10,6 @@ sleep 1
 x11vnc -display :1 -nopw -forever -shared -listen localhost &
 sleep 1
 
-# 3. noVNC (On le décale sur le port 6080 en interne)
-/usr/share/novnc/utils/launch.sh --vnc localhost:5900 --listen 6080 &
-sleep 2
-
-# 4. Lancer ton vrai logiciel CustomTkinter !
-python GUI_EcoRetina_IAagent.py &
-
-# 5. Le "Bouclier" Render : Un serveur Python sur le port officiel exigé par Render
-# Il va servir le dossier noVNC et répondre directement au robot de Render
-cd /usr/share/novnc
-python3 -m http.server $PORT
+# 3. Lancement direct du pont Web noVNC sur le port exigé par Render
+# (Plus besoin de serveur Python secondaire, noVNC gère tout seul)
+/usr/share/novnc/utils/launch.sh --vnc localhost:5900 --listen $PORT
