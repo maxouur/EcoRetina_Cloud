@@ -29,4 +29,4 @@ sleep 2
 # 6. L'ALCHIMIE NETFLIX/RENDER : Websockify direct
 # Il prend le flux vidéo local (5900) et le transforme en site web sur le port Render
 # On lui dit de servir directement l'interface graphique incluse dans noVNC
-python3 -m websockify --web /usr/share/novnc 0.0.0.0:$PORT 127.0.0.1:5900
+python3 -m websockify --web /usr/share/novnc 0.0.0.0:$PORT 127.0.0.1:5900 --web-path=/websockify
