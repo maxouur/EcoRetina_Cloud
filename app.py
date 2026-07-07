@@ -323,17 +323,12 @@ def main_page():
 # 4. GESTION DU PIPELINE DE LECTURE BINAIRE
 # ==========================================
 
-def import_main_dataset_from_bytes(raw_bytes):
+def import_main_dataset_from_event(e):
     try:
-        from io import BytesIO, StringIO
+        # NiceGUI extrait directement le texte du fichier de façon universelle
+        text_data = e.file.text()
         
-        # 1. Détection robuste de l'encodage (UTF-8 ou Latin-1 de secours)
-        try:
-            text_data = raw_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            text_data = raw_bytes.decode('latin-1')
-            
-        # 2. Détection automatique du séparateur (virgule, point-virgule ou tabulation)
+        # Algorithme de détection automatique du séparateur (virgule ou point-virgule)
         first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
         sep = ','
         if ';' in first_line and first_line.count(';') > first_line.count(','):
@@ -341,37 +336,31 @@ def import_main_dataset_from_bytes(raw_bytes):
         elif '\t' in first_line:
             sep = '\t'
             
-        # 3. Chargement dans Pandas via un flux de texte clean
+        # Chargement Pandas via un StringIO
+        from io import StringIO
         state.df = pd.read_csv(StringIO(text_data), sep=sep)
         
-        # SÉCURITÉ : Nettoyer les noms de colonnes (enlever les espaces ou caractères invisibles)
+        # Nettoyage de sécurité des noms de colonnes
         state.df.columns = [str(c).strip() for c in state.df.columns]
         
         state.save_state("Import dataset")
-        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables). Séparateur détecté : '{sep}'")
+        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables). Séparateur : '{sep}'")
         
-        # Appeler la synchronisation de l'interface
+        # On force la mise à jour des éléments de l'interface
         sync_all_comboboxes()
     except Exception as ex:
         state.log(f"Échec de chargement : {str(ex)}")
-        print(traceback.format_exc()) # Écrit l'erreur complète dans les logs Render pour diagnostic
+        print(traceback.format_exc())
 
-def import_predict_dataset_from_bytes(raw_bytes):
+def import_predict_dataset_from_event(e):
     try:
-        from io import BytesIO, StringIO
-        
-        try:
-            text_data = raw_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            text_data = raw_bytes.decode('latin-1')
-            
+        text_data = e.file.text()
         first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
         sep = ','
         if ';' in first_line and first_line.count(';') > first_line.count(','):
             sep = ';'
-        elif '\t' in first_line:
-            sep = '\t'
             
+        from io import StringIO
         state.df_predict = pd.read_csv(StringIO(text_data), sep=sep)
         state.df_predict.columns = [str(c).strip() for c in state.df_predict.columns]
         
@@ -379,7 +368,6 @@ def import_predict_dataset_from_bytes(raw_bytes):
         state.log("Base d'inférence chargée avec succès.")
     except Exception as ex:
         ui.notify(f"Erreur d'importation : {str(ex)}")
-        print(traceback.format_exc())
 
 # ==========================================
 # 5. LOGIQUE SECONDAIRE DE NETTOYAGE
