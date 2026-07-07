@@ -1,3 +1,4 @@
+nicegui
 scikit-learn
 pandas
 numpy
@@ -7,5 +8,8 @@ scipy
 codecarbon
 matplotlib
 google-genai
-customtkinter
+openai
+anthropic
+groq
+requests
 pillow
