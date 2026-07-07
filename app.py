@@ -825,4 +825,4 @@ def export_predicted_csv():
     ui.download(csv_buf.getvalue().encode('utf-8'), 'EcoRETINA_Predictions_Output.csv')
 
 # Liaison réseau définitive sur le port public attribué par Render
-ui.run(port=int(os.environ.get('PORT', 8080)), title="EcoRETINA Intelligence", reload=False)
+ui.run(port=int(os.environ.get('PORT', 8080)), title="EcoRETINA Intelligence", reload=True)
