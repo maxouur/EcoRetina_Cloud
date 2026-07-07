@@ -573,19 +573,50 @@ async def trigger_pipeline_execution():
     state.algo_status_lbl.text = "Exécution mathématique de la régression en tâche de fond..."
     state.algo_status_lbl.update()
     
+  # --- SÉCURISATION DES ARGUMENTS (Extraction stricte des valeurs primitives avant le thread) ---
     config_args = {
-        'alpha': getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value,
-        'max_iter': int(getattr(state, 'max_iter_input', type('obj', (), {'value': 1000})).value),
+        'eco_loss': str(getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value),
+        'eco_reg_type': str(getattr(state, 'eco_reg_type', type('obj', (), {'value': "linear"})).value),
+        'eco_cross_dummy': str(getattr(state, 'eco_cross_dummy', type('obj', (), {'value': "False"})).value),
+        'eco_cov_type': str(getattr(state, 'eco_cov_type', type('obj', (), {'value': "nonrobust"})).value),
+        'eco_grid': float(getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value),
+        'eco_max_reg': int(getattr(state, 'eco_max_reg', type('obj', (), {'value': 100})).value),
+        'eco_chunk_size': int(getattr(state, 'eco_chunk_size', type('obj', (), {'value': 500})).value),
+        'eco_seed': int(getattr(state, 'eco_seed', type('obj', (), {'value': 8})).value),
+        
+        'fit_intercept': str(getattr(state, 'ols_fit_intercept', getattr(state, 'fit_intercept_input', type('obj', (), {'value': 'True'}))).value),
+        'alpha': float(getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value),
+        'max_iter': int(getattr(state, 'max_iter_input', getattr(state, 'nn_max_iter', type('obj', (), {'value': 1000}))).value),
+        'tol': float(getattr(state, 'tol_input', type('obj', (), {'value': 0.0001})).value),
+        'ridge_solver': str(getattr(state, 'ridge_solver', type('obj', (), {'value': 'auto'})).value),
+        'en_l1_ratio': float(getattr(state, 'en_l1_ratio', type('obj', (), {'value': 0.5})).value),
+        
         'xgb_n': int(getattr(state, 'xgb_n', type('obj', (), {'value': 100})).value),
         'xgb_depth': int(getattr(state, 'xgb_depth', type('obj', (), {'value': 6})).value),
-        'xgb_lr': getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value,
-        'nn_layers': getattr(state, 'nn_layers', type('obj', (), {'value': "100,50"})).value,
-        'nn_iter': int(getattr(state, 'nn_iter', type('obj', (), {'value': 200})).value),
-        'eco_loss': getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value,
-        'eco_grid': getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value,
+        'xgb_lr': float(getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value),
+        'xgb_subsample': float(getattr(state, 'xgb_subsample', type('obj', (), {'value': 1.0})).value),
+        'xgb_colsample': float(getattr(state, 'xgb_colsample', type('obj', (), {'value': 1.0})).value),
+        'xxx_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value),
+        'xgb_alpha': float(getattr(state, 'xgb_alpha', type('obj', (), {'value': 0.0})).value),
+        'xgb_lambda': float(getattr(state, 'xgb_lambda', type('obj', (), {'value': 1.0})).value),
+        
+        'rf_n_estimators': int(getattr(state, 'rf_n_estimators', type('obj', (), {'value': 100})).value),
+        'rf_max_depth': int(getattr(state, 'rf_max_depth', type('obj', (), {'value': 0})).value),
+        'rf_split': int(getattr(state, 'rf_min_split', type('obj', (), {'value': 2})).value),
+        'rf_leaf': int(getattr(state, 'rf_min_leaf', type('obj', (), {'value': 1})).value),
+        'rf_max_features': str(getattr(state, 'rf_max_features', type('obj', (), {'value': '1.0'})).value),
+        
+        'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': "100,50"})).value),
+        'nn_activation': str(getattr(state, 'nn_activation', type('obj', (), {'value': "relu"})).value),
+        'nn_solver': str(getattr(state, 'nn_solver', type('obj', (), {'value': "adam"})).value),
+        'nn_alpha': float(getattr(state, 'nn_alpha', type('obj', (), {'value': 0.0001})).value),
+        'nn_lr_init': float(getattr(state, 'nn_lr_init', type('obj', (), {'value': 0.001})).value),
+        'nn_max_iter': int(getattr(state, 'nn_max_iter', type('obj', (), {'value': 200})).value),
     }
 
-    res = await run.cpu_bound(execute_ml_math_core, algo, target, selected_features, config_args)
+    # EXÉCUTION DÉTACHÉE POUR NE PAS CONGELER LES WEBSOCKETS DU NAVIGATEUR
+    loop = asyncio.get_event_loop()
+    res = await loop.run_in_executor(None, execute_ml_math_core, algo, target, selected_features, config_args)
     
     run_id = f"Run_{time.strftime('%H%M%S')}"
     state.run_history[run_id] = res
@@ -802,4 +833,4 @@ def export_predicted_csv():
     ui.download(csv_buf.getvalue().encode('utf-8'), 'EcoRETINA_Predictions_Output.csv')
 
 # Liaison réseau définitive sur le port public attribué par Render
-ui.run(port=int(os.environ.get('PORT', 8080)), title="EcoRETINA Intelligence", reload=True)
+ui.run(port=int(os.environ.get('PORT', 8080)), title="EcoRETINA Intelligence", reload=False)
