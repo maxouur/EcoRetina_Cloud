@@ -49,14 +49,13 @@ class Workspace:
     def __init__(self):
         self.df = None
         self.df_predict = None
-        self.history = []  # Pour l'Undo
-        self.future = []   # Pour le Redo
+        self.history = []  
+        self.future = []   
         self.run_history = {}
         self.latest_run_by_algo = {}
         self.logs = []
         self.ai_agent = None
         
-        # Variables de configuration par défaut
         self.split_strategy = "Train/Test Split"
         self.train_split_pct = 80.0
         self.k_folds = 5
@@ -84,7 +83,7 @@ class OLSWrapper:
     def predict(self, X): return self.sm_model.predict(X)
 
 # ==========================================
-# 2. IA COPILOT MULTI-PROVIDER (STREAMING SIM)
+# 2. IA COPILOT MULTI-PROVIDER
 # ==========================================
 class EcoRetinaChatAgent:
     def __init__(self, api_key: str, provider: str):
@@ -117,150 +116,157 @@ class EcoRetinaChatAgent:
             bubble_ui.text = f"[Erreur API] : {str(e)}"
 
 # ==========================================
-# 3. INTERFACE GRAPHIQUE INTERACTIVE
+# 3. INTERFACE DESIGN INCURVÉ & MODERNE
 # ==========================================
 
 @ui.page('/')
 def main_page():
     ui.dark_mode().enable()
     
-    # --- HEADER ---
-    with ui.header().classes('bg-slate-900 text-white items-center justify-between p-4 shadow-lg'):
+    # Injection globale de styles CSS pour adoucir NiceGUI (Scrollbars incurvées, focus ronds)
+    ui.add_head_html('''
+    <style>
+        .q-btn { border-radius: 12px !important; text-transform: none !important; font-weight: 600 !important; }
+        .q-field { border-radius: 14px !important; }
+        .q-field__control { border-radius: 14px !important; }
+        .q-tab { border-radius: 12px 12px 0 0 !important; margin: 0 4px; }
+        .q-panel { border-radius: 20px !important; }
+    </style>
+    ''')
+    
+    # --- HEADER ARRONDI ---
+    with ui.header().classes('bg-slate-900/80 backdrop-blur-md text-white items-center justify-between p-4 shadow-xl m-4 rounded-2xl border border-slate-800'):
         with ui.row().classes('items-center gap-4'):
-            ui.label('≡').classes('text-3xl cursor-pointer').on('click', lambda: left_drawer.toggle())
-            ui.label('EcoRETINA ML Workbench PRO').classes('text-xl font-bold text-emerald-400')
+            ui.label('≡').classes('text-3xl cursor-pointer hover:text-emerald-400 transition-colors').on('click', lambda: left_drawer.toggle())
+            ui.label('EcoRETINA Intelligence').classes('text-xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300')
         with ui.row().classes('items-center gap-3'):
-            ui.button('↩ Undo', on_click=apply_undo).props('flat color=white')
-            ui.button('↪ Redo', on_click=apply_redo).props('flat color=white')
-            ui.button('🤖 AI Copilot', on_click=lambda: right_drawer.toggle()).classes('bg-blue-600 font-bold')
+            ui.button('↩ Undo', on_click=apply_undo).props('flat color=white').classes('hover:bg-slate-800 rounded-xl')
+            ui.button('↪ Redo', on_click=apply_redo).props('flat color=white').classes('hover:bg-slate-800 rounded-xl')
+            ui.button('🤖 AI Copilot', on_click=lambda: right_drawer.toggle()).classes('bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl font-bold shadow-lg shadow-blue-500/20')
 
-    # --- DRAWER MENU LATÉRAL ---
-    with ui.left_drawer(value=False).classes('bg-slate-800 text-white') as left_drawer:
-        ui.label('Navigation Générale').classes('text-lg font-bold p-4 text-emerald-400 border-b border-slate-700 w-full')
-        ui.button('Workspace Principal', on_click=lambda: main_tabs.set_value('workspace')).classes('w-full justify-start q-ma-xs')
-        ui.button('Activity Log', on_click=lambda: main_tabs.set_value('logs')).classes('w-full justify-start q-ma-xs')
-        ui.button('Tutorial & Docs', on_click=lambda: main_tabs.set_value('tutorial')).classes('w-full justify-start q-ma-xs')
+    # --- DRAWER MENU LATÉRAL MODERNE ---
+    with ui.left_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-r-3xl border-r border-slate-800') as left_drawer:
+        ui.label('Navigation').classes('text-sm uppercase tracking-wider font-bold p-2 text-slate-400 border-b border-slate-800 w-full mb-4')
+        ui.button('Workspace Principal', on_click=lambda: main_tabs.set_value('workspace')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
+        ui.button('Activity Log', on_click=lambda: main_tabs.set_value('logs')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
+        ui.button('Tutorial & Docs', on_click=lambda: main_tabs.set_value('tutorial')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
 
-    # --- DRAWER IA COPILOT ---
-    with ui.right_drawer(value=False).classes('bg-slate-900 p-4 text-white') as right_drawer:
-        ui.label('AI Copilot Assistant').classes('text-h6 font-bold text-emerald-400')
-        provider_ui = ui.select(["Google Gemini", "OpenAI (ChatGPT)", "Groq"], value="Google Gemini").classes('w-full my-2')
-        key_ui = ui.input(placeholder='Clé API', password=True).classes('w-full my-2')
+    # --- DRAWER IA COPILOT ARRONDI ---
+    with ui.right_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-l-3xl border-l border-slate-800') as right_drawer:
+        ui.label('AI Assistant').classes('text-lg font-black text-emerald-400 mb-2')
+        provider_ui = ui.select(["Google Gemini", "OpenAI (ChatGPT)", "Groq"], value="Google Gemini").classes('w-full rounded-xl')
+        key_ui = ui.input(placeholder='Clé API', password=True).classes('w-full rounded-xl')
         
-        chat_container = ui.scroll_area().classes('w-full h-96 bg-slate-950 p-2 rounded my-4')
+        chat_container = ui.scroll_area().classes('w-full h-96 bg-slate-950/60 p-3 rounded-2xl border border-slate-800 my-4 shadow-inner')
         
         async def connect_ai():
             if not key_ui.value: return ui.notify("Clé manquante !")
             state.ai_agent = EcoRetinaChatAgent(key_ui.value, provider_ui.value)
             state.log(f"IA connectée avec succès via {provider_ui.value}")
         
-        ui.button('Connecter', on_click=connect_ai).classes('w-full bg-emerald-600')
+        ui.button('Connecter l\'IA', on_click=connect_ai).classes('w-full bg-emerald-600 rounded-xl font-bold shadow-lg shadow-emerald-500/20')
         
-        chat_input = ui.input(placeholder='Posez votre question...').classes('w-full mt-4')
+        chat_input = ui.input(placeholder='Posez votre question...').classes('w-full mt-4 rounded-xl')
         async def submit_chat():
+            if not chat_input.value: return
             if not state.ai_agent: return
             with chat_container:
-                ui.label(f"User: {chat_input.value}").classes('text-blue-400 font-bold block mt-2')
-                ai_b = ui.label("En attente de réponse...").classes('text-white block ml-2 bg-slate-800 p-2 rounded')
+                ui.label(f"User: {chat_input.value}").classes('text-blue-400 font-bold block mt-2 text-sm')
+                ai_b = ui.label("Analyse en cours...").classes('text-slate-200 block ml-2 bg-slate-800/80 p-3 rounded-2xl text-sm border border-slate-700/50')
                 await state.ai_agent.ask(chat_input.value, ai_b)
                 chat_input.value = ''
         chat_input.on('keydown.enter', submit_chat)
 
-    # --- STRUCTURE PRINCIPALE DE L'APPLICATION ---
-    with ui.tab_panels(ui.tabs(), value='workspace').classes('w-full bg-transparent') as main_tabs:
+    # --- BLOC DE CONTENU GENERAL ---
+    with ui.tab_panels(ui.tabs(), value='workspace').classes('w-full bg-transparent px-4') as main_tabs:
         
-        # ==========================================
-        # ONGLET WORKSPACE CONTENANT LES 5 ETAPES
-        # ==========================================
         with ui.tab_panel('workspace'):
-            with ui.tabs().classes('w-full bg-slate-950 text-white rounded shadow') as step_tabs:
-                t1 = ui.tab('t_data', label='1. Data & Pre-Processing')
-                t2 = ui.tab('t_algo', label='2. Algorithms & Params')
-                t3 = ui.tab('t_compare', label='3. Compare Results')
-                t4 = ui.tab('t_predict', label='4. Predict (New Data)')
+            # NAVIGATION ENTRE LES 5 ONGLETS VERSION ULTRA MODERNE (PILULES ARRONDIES)
+            with ui.tabs().classes('w-full bg-slate-900/40 p-2 rounded-2xl border border-slate-800/60 text-white') as step_tabs:
+                t1 = ui.tab('t_data', label='1. Data & Pre-Processing').classes('rounded-xl')
+                t2 = ui.tab('t_algo', label='2. Algorithms & Params').classes('rounded-xl')
+                t3 = ui.tab('t_compare', label='3. Compare Results').classes('rounded-xl')
+                t4 = ui.tab('t_predict', label='4. Predict (New Data)').classes('rounded-xl')
 
-            with ui.tab_panels(step_tabs, value='t_data').classes('w-full bg-transparent p-4') as step_panels:
+            with ui.tab_panels(step_tabs, value='t_data').classes('w-full bg-transparent pt-4 overflow-visible') as step_panels:
                 
                 # ------------------------------------------
-                # ETAPE 1 : DATA & PRE-PROCESSING
+                # ETAPE 1 : DATA & PRE-PROCESSING (INCURVÉ)
                 # ------------------------------------------
                 with ui.tab_panel('t_data'):
-                    with ui.row().classes('w-full gap-4'):
-                        # Import et split strategy
-                        with ui.card().classes('w-full md:w-5/12 bg-slate-800 p-4'):
-                            ui.label('Dataset Import & Strategy').classes('text-lg font-bold text-emerald-400')
-                            ui.upload(label='Déposer CSV/Excel', on_upload=import_main_dataset, auto_upload=True).classes('w-full')
+                    with ui.row().classes('w-full gap-6'):
+                        # Import de données
+                        with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
+                            ui.label('Dataset Import & Sample Strategy').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
+                            ui.upload(label='Glissez-déposez votre CSV', on_upload=import_main_dataset, auto_upload=True).classes('w-full rounded-2xl')
                             
-                            ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4')
+                            ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4 rounded-xl')
                             with ui.column().classes('w-full') as split_container:
                                 state.split_slider = ui.slider(min=50, max=100, value=80).classes('w-full mt-2')
-                                ui.label().bind_text_from(state.split_slider, 'value', backward=lambda v: f"Train Ratio : {v}%")
+                                ui.label().bind_text_from(state.split_slider, 'value', backward=lambda v: f"Ratio d'apprentissage : {v}%")
                             with ui.column().classes('w-full hidden') as kfold_container:
-                                state.kfold_input = ui.number(label='Nombre de Folds (K)', value=5, min=2).classes('w-full')
+                                state.kfold_input = ui.number(label='Nombre de Folds (K)', value=5, min=2).classes('w-full rounded-xl')
                             state.split_container_ui = split_container
                             state.kfold_container_ui = kfold_container
 
-                            ui.button('Visualiser la table', on_click=view_main_data).classes('bg-blue-600 w-full mt-4')
+                            ui.button('Visualiser la table de données', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
 
-                        # Outliers & Encodage & Scaling
-                        with ui.card().classes('w-full md:w-6/12 bg-slate-800 p-4'):
-                            ui.label('Traitements & Nettoyage').classes('text-lg font-bold text-emerald-400')
+                        # Traitements avancés
+                        with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
+                            ui.label('Traitements & Nettoyage Avancé').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                             
                             # Outliers
-                            with ui.expansion('Gestion des Outliers (Valeurs Extrêmes)', icon='analytics').classes('w-full bg-slate-900 rounded'):
+                            with ui.expansion('Gestion des Outliers (Valeurs Extrêmes)', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
                                 state.outlier_select = ui.select([], label='Variable Numérique').classes('w-full')
-                                with ui.row().classes('w-full'):
-                                    state.outlier_min = ui.number(label='Borne Inf').classes('w-1/2')
-                                    state.outlier_max = ui.number(label='Borne Sup').classes('w-1/2')
+                                with ui.row().classes('w-full gap-2'):
+                                    state.outlier_min = ui.number(label='Borne Inf').classes('w-[47%]')
+                                    state.outlier_max = ui.number(label='Borne Sup').classes('w-[47%]')
                                 state.outlier_action = ui.select(['Clip (Cap values)', 'Drop rows'], value='Clip (Cap values)').classes('w-full')
-                                ui.button('Appliquer Filtre Outliers', on_click=process_outliers).classes('w-full bg-amber-600')
+                                ui.button('Appliquer le filtre Outliers', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
 
                             # Categoricals
-                            with ui.expansion('Variables Qualitatives / Chaines', icon='g_translate').classes('w-full bg-slate-900 rounded mt-2'):
+                            with ui.expansion('Variables Qualitatives / Encodage', icon='g_translate').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
                                 state.cat_select = ui.select([], label='Variable Catégorielle', on_change=update_cat_reference).classes('w-full')
                                 state.cat_ref_select = ui.select([], label='Catégorie de Référence (Dropped)').classes('w-full')
-                                with ui.row().classes('w-full'):
-                                    ui.button('Encoder (Dummies)', on_click=lambda: run_cat_transformation('encode')).classes('bg-blue-600 expand')
-                                    ui.button('Supprimer Colonne', on_click=lambda: run_cat_transformation('drop')).classes('bg-red-600 expand')
+                                with ui.row().classes('w-full gap-2 mt-2'):
+                                    ui.button('Encoder en Dummies', on_click=lambda: run_cat_transformation('encode')).classes('bg-blue-600 w-[48%] rounded-xl')
+                                    ui.button('Supprimer Colonne', on_click=lambda: run_cat_transformation('drop')).classes('bg-red-600/80 w-[48%] rounded-xl')
 
                             # Scaling
-                            with ui.expansion('Normalisation / Scaling', icon='scale').classes('w-full bg-slate-900 rounded mt-2'):
+                            with ui.expansion('Normalisation / Scaling', icon='scale').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl'):
                                 state.scale_scope = ui.select(['All Predictors', 'Target Variable ONLY', 'All Variables'], value='All Predictors').classes('w-full')
                                 state.scale_method = ui.select(['StandardScaler (Z-Score)', 'MinMaxScaler (0-1)'], value='StandardScaler (Z-Score)').classes('w-full')
-                                ui.button('Lancer la Normalisation', on_click=run_scaling_process).classes('w-full bg-indigo-600')
+                                ui.button('Exécuter la mise à l\'échelle', on_click=run_scaling_process).classes('w-full bg-indigo-600 rounded-xl mt-2')
 
                 # ------------------------------------------
-                # ETAPE 2 : ALGORITHMS & PARAMS
+                # ETAPE 2 : ALGORITHMS & PARAMS (DESIGN ARRONDIS)
                 # ------------------------------------------
                 with ui.tab_panel('t_algo'):
-                    with ui.card().classes('w-full bg-slate-800 p-4'):
-                        ui.label('Configuration de l\'Algorithme d\'Apprentissage').classes('text-xl font-bold text-emerald-400 mb-4')
+                    with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
+                        ui.label('Configuration de l\'Algorithme').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                         
                         with ui.row().classes('w-full gap-4 items-center'):
-                            state.algo_choice = ui.select(['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet', 'XGBoost', 'Random Forest', 'Neural Network'], value='EcoRETINA', on_change=refresh_algo_param_view).classes('w-1/3')
-                            state.main_target_select = ui.select([], label='Variable Cible (Y) à prédire').classes('w-1/3')
+                            state.algo_choice = ui.select(['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet', 'XGBoost', 'Random Forest', 'Neural Network'], value='EcoRETINA', on_change=refresh_algo_param_view).classes('w-1/3 rounded-xl')
+                            state.main_target_select = ui.select([], label='Variable Cible (Y) à modéliser').classes('w-1/3 rounded-xl')
                         
-                        # Zone dynamique pour les hyperparamètres spécifiques
-                        state.param_options_frame = ui.row().classes('w-full bg-slate-900 p-4 rounded mt-4')
+                        state.param_options_frame = ui.row().classes('w-full bg-slate-950/50 p-4 rounded-xl border border-slate-800 mt-4')
                         
-                        # Grille de sélection des variables explicatives (Features)
-                        ui.label('Sélection des Prédicteurs (Features X)').classes('text-lg font-bold text-emerald-400 mt-6')
-                        state.features_checkbox_container = ui.row().classes('w-full bg-slate-950 p-4 rounded max-h-60 overflow-y-scroll border border-slate-700')
+                        ui.label('Sélection des Predictors (X)').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
+                        state.features_checkbox_container = ui.row().classes('w-full bg-slate-950/80 p-4 rounded-2xl max-h-60 overflow-y-scroll border border-slate-800')
                         
-                        # Boutons d'actions d'apprentissage
-                        with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-700 pt-4'):
-                            state.algo_status_lbl = ui.label('Pipeline prêt. Conduisez l\'analyse.').classes('text-gray-400 font-mono')
-                            with ui.row():
-                                ui.button('Voir Rapport Statistique Détaillé', on_click=open_detailed_report).classes('bg-blue-600')
-                                ui.button('► Lancer l\'Entraînement', on_click=trigger_pipeline_execution).classes('bg-emerald-600 font-bold px-6 text-lg')
+                        with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
+                            state.algo_status_lbl = ui.label('Pipeline prêt. Conduisez l\'analyse.').classes('text-slate-400 font-mono text-sm')
+                            with ui.row().classes('gap-3'):
+                                ui.button('Rapport Graphique Détaillé', on_click=open_detailed_report).classes('bg-blue-600/90 rounded-xl font-bold')
+                                ui.button('► Lancer l\'Apprentissage', on_click=trigger_pipeline_execution).classes('bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl font-bold px-6 shadow-lg shadow-emerald-500/10')
 
                 # ------------------------------------------
                 # ETAPE 3 : COMPARE RESULTS
                 # ------------------------------------------
                 with ui.tab_panel('t_compare'):
-                    with ui.card().classes('w-full bg-slate-800 p-4'):
-                        ui.label('Tableau de Bord Comparatif des Évaluations').classes('text-xl font-bold text-emerald-400')
-                        ui.label('Les meilleures métriques validées sont automatiquement identifiées par un astérisque (*)').classes('text-sm text-gray-400 mb-4')
+                    with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
+                        ui.label('Benchmark Comparatif Global').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
+                        ui.label('Les optimaux statistiques sont marqués d\'une étoile (*)').classes('text-xs text-slate-400 mb-4')
                         
                         state.compare_table_ui = ui.table(
                             columns=[
@@ -273,58 +279,57 @@ def main_page():
                                 {'name': 'mape_te', 'label': 'MAPE Test', 'field': 'mape_te', 'align': 'center'},
                                 {'name': 'co2', 'label': 'Carbon (kgCO2)', 'field': 'co2', 'align': 'center'},
                             ], rows=[]
-                        ).classes('w-full bg-slate-900 text-white')
+                        ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800')
                         
-                        with ui.row().classes('w-full justify-between mt-4'):
-                            ui.button('Vider l\'historique', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600')
-                            ui.button('Exporter Synthèse CSV', on_click=export_comparison_matrix).classes('bg-emerald-600')
+                        with ui.row().classes('w-full justify-between mt-6'):
+                            ui.button('Vider l\'historique', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
+                            ui.button('Exporter Synthèse (.csv)', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
 
                 # ------------------------------------------
-                # ETAPE 4 : PREDICT (NEW DATA / INFERENCE)
+                # ETAPE 4 : PREDICT (INFERENCE)
                 # ------------------------------------------
                 with ui.tab_panel('t_predict'):
-                    with ui.card().classes('w-full bg-slate-800 p-4'):
-                        ui.label('Inférence & Prédiction sur de Nouvelles Données').classes('text-xl font-bold text-emerald-400 mb-4')
+                    with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
+                        ui.label('Inférence & Prédiction sur Fichiers Vierges').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                         
-                        with ui.row().classes('w-full gap-4'):
-                            with ui.card().classes('w-1/2 bg-slate-900 p-4'):
-                                ui.label('1. Fichier de test / Inférence').classes('text-md font-bold text-gray-300')
-                                ui.upload(label='Charger fichier sans cible Y', on_upload=import_predict_dataset, auto_upload=True).classes('w-full')
-                                state.predict_file_lbl = ui.label('Aucun fichier d\'inférence chargé').classes('text-gray-400 font-mono text-xs')
+                        with ui.row().classes('w-full gap-6'):
+                            with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
+                                ui.label('1. Fichier d\'Inférence').classes('text-sm font-bold text-slate-300 mb-2')
+                                ui.upload(label='Déposez le fichier de test', on_upload=import_predict_dataset, auto_upload=True).classes('w-full rounded-xl')
+                                state.predict_file_lbl = ui.label('Aucun fichier d\'inférence chargé').classes('text-slate-400 font-mono text-xs mt-2')
                             
-                            with ui.card().classes('w-1/2 bg-slate-900 p-4'):
-                                ui.label('2. Choix du Modèle Appris').classes('text-md font-bold text-gray-300')
-                                state.predict_run_select = ui.select([], label='Sélectionner un Run validé').classes('w-full')
-                                ui.button('Rafraîchir la Liste', on_click=sync_predict_runs).classes('w-full bg-slate-700')
+                            with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
+                                ui.label('2. Sélection du Cerveau (Modèle)').classes('text-sm font-bold text-slate-300 mb-2')
+                                state.predict_run_select = ui.select([], label='Choisir un Run Validé').classes('w-full rounded-xl')
+                                ui.button('Synchroniser les modèles', on_click=sync_predict_runs).classes('w-full bg-slate-800 rounded-xl text-xs mt-2')
 
-                        with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-700 pt-4'):
-                            with ui.row():
-                                ui.button('Exécuter la Prédiction', on_click=execute_inference_process).classes('bg-emerald-600 font-bold text-lg')
-                                ui.button('Visualiser Résultats', on_click=view_predict_data).classes('bg-blue-600')
-                            ui.button('Exporter le fichier enrichi (.csv)', on_click=export_predicted_csv).classes('bg-indigo-600')
+                        with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
+                            with ui.row().classes('gap-3'):
+                                ui.button('Calculer les prédictions', on_click=execute_inference_process).classes('bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl font-bold')
+                                ui.button('Visualiser les estimations', on_click=view_predict_data).classes('bg-blue-600 rounded-xl')
+                            ui.button('Exporter le fichier enrichi (.csv)', on_click=export_predicted_csv).classes('bg-indigo-600 rounded-xl')
 
-        # TAB LOGS SÉPARÉ
+        # LOGS
         with ui.tab_panel('logs'):
-            with ui.card().classes('w-full bg-slate-800 p-4'):
-                ui.label('Journal d\'Activité du Serveur').classes('text-xl font-bold text-emerald-400 mb-4')
-                state.logs_area = ui.html().classes('font-mono text-sm bg-black p-4 rounded w-full h-96 overflow-y-scroll text-green-400')
+            with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
+                ui.label('Journal d\'Activité Serveur').classes('text-lg font-bold text-emerald-400 mb-4')
+                state.logs_area = ui.html().classes('font-mono text-xs bg-black p-4 rounded-xl w-full h-96 overflow-y-scroll text-green-400 border border-slate-800')
                 state.logs_area.content = "<br>".join(state.logs)
 
-        # TAB TUTORIAL SÉPARÉ
+        # TUTORIAL
         with ui.tab_panel('tutorial'):
-            with ui.card().classes('w-full bg-slate-800 p-4 text-white'):
-                ui.label('Tutoriel Économétrique & ML Workspace').classes('text-2xl font-bold text-emerald-400 mb-4')
+            with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-white'):
+                ui.label('Documentation Applicative').classes('text-lg font-bold text-emerald-400 mb-4')
                 ui.markdown("""
-                - **Étape 1 (Data)** : Chargez votre fichier. Utilisez les modules d'expansion pour filtrer les Outliers ou générer vos variables muettes (Dummies) avec exclusion stricte de la modalité de référence.
-                - **Étape 2 (Algorithm)** : Cochez manuellement vos régresseurs explicatifs. Les hyperparamètres s'ajustent dynamiquement.
-                - **Étape 3 (Compare)** : Analyse comparative automatique intégrant le diagnostic d'émissions de gaz à effet de serre en temps réel (CodeCarbon).
+                L'environnement fournit un support complet pour vos pipelines d'apprentissage :
+                - **Coins arrondis & transitions douces** : Conçu pour éviter la fatigue visuelle.
+                - **Asynchronisme** : L'interface web reste réactive même lors d'entraînements massifs de forêts aléatoires ou de réseaux de neurones.
                 """)
 
-    # Initialisation de l'affichage des paramètres par défaut
     refresh_algo_param_view()
 
 # ==========================================
-# 4. LOGIQUE INTERNE & ACTIONS UTILISATEURS
+# 4. ACTIONS LOGIQUES ET COMPORTEMENTALES
 # ==========================================
 
 def toggle_split_view(strategy):
@@ -338,12 +343,13 @@ def toggle_split_view(strategy):
 
 def import_main_dataset(e):
     try:
-        state.df = pd.read_csv(e.content) if e.name.endswith('.csv') else pd.read_excel(e.content)
-        state.save_state(f"Import dataset: {e.name}")
-        state.log(f"Jeu de données principal chargé : {e.name} ({len(state.df)} lignes, {len(state.df.columns)} variables)")
+        file_bytes = BytesIO(e.content.read())
+        state.df = pd.read_csv(file_bytes)
+        state.save_state("Import dataset")
+        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
         sync_all_comboboxes()
     except Exception as ex:
-        state.log(f"Échec de l'importation : {str(ex)}")
+        state.log(f"Échec de chargement : {str(ex)}")
 
 def sync_all_comboboxes():
     if state.df is None: return
@@ -360,11 +366,10 @@ def sync_all_comboboxes():
     state.main_target_select.options = cols
     if cols: state.main_target_select.value = cols[0]
     
-    # Génération des cases à cocher pour les Features
     state.features_checkbox_container.clear()
     with state.features_checkbox_container:
         for c in cols:
-            ui.checkbox(text=c, value=True).classes('text-white mx-2 font-mono')
+            ui.checkbox(text=c, value=True).classes('text-slate-200 mx-2 font-mono text-sm')
 
 def update_cat_reference(e):
     if state.df is None or not e.value: return
@@ -376,33 +381,30 @@ def process_outliers():
     if state.df is None or not state.outlier_select.value: return
     col = state.outlier_select.value
     mn, mx = state.outlier_min.value, state.outlier_max.value
-    if mn is None or mx is None: return ui.notify("Veuillez saisir les bornes !")
+    if mn is None or mx is None: return ui.notify("Spécifiez les bornes !")
     
-    state.save_state(f"Outliers filtering on {col}")
+    state.save_state(f"Outliers on {col}")
     if 'Clip' in state.outlier_action.value:
         state.df[col] = state.df[col].clip(lower=mn, upper=mx)
-        state.log(f"Outliers écrêtés (Clipped) pour '{col}' entre {mn} et {mx}")
     else:
-        init_l = len(state.df)
         state.df = state.df[(state.df[col] >= mn) & (state.df[col] <= mx)]
-        state.log(f"Suppression de {init_l - len(state.df)} lignes hors limites pour '{col}'")
+    state.log(f"Filtre Outlier validé sur '{col}'.")
     sync_all_comboboxes()
 
 def run_cat_transformation(action):
     if state.df is None or not state.cat_select.value: return
     col = state.cat_select.value
-    state.save_state(f"Transformation qualitatives ({action}) sur {col}")
+    state.save_state(f"Cat transform {action} sur {col}")
     
     if action == 'drop':
         state.df.drop(columns=[col], inplace=True)
-        state.log(f"Colonne '{col}' supprimée.")
     else:
         ref = state.cat_ref_select.value
         dummies = pd.get_dummies(state.df[col], prefix=col).astype(int)
         if f"{col}_{ref}" in dummies.columns:
             dummies.drop(columns=[f"{col}_{ref}"], inplace=True)
         state.df = pd.concat([state.df.drop(columns=[col]), dummies], axis=1)
-        state.log(f"Colonne '{col}' convertie en Dummies (Exclusion de la référence : '{ref}')")
+    state.log(f"Transformation de la variable quali '{col}' opérée.")
     sync_all_comboboxes()
 
 def run_scaling_process():
@@ -411,7 +413,7 @@ def run_scaling_process():
     method = state.scale_method.value
     target = state.main_target_select.value
     
-    state.save_state(f"Scaling metrics ({method})")
+    state.save_state(f"Scale {method}")
     scaler = StandardScaler() if "Standard" in method else MinMaxScaler()
     num_cols = state.df.select_dtypes(include=[np.number]).columns.tolist()
     
@@ -423,19 +425,19 @@ def run_scaling_process():
             state.df[feats] = scaler.fit_transform(state.df[feats])
         else:
             state.df[num_cols] = scaler.fit_transform(state.df[num_cols])
-        state.log(f"Normalisation appliquée via {method} (Périmètre : {scope})")
+        state.log(f"Mise à l'échelle accomplie ({method}).")
     except Exception as ex:
-        state.log(f"Erreur de normalisation : {str(ex)}")
+        state.log(f"Erreur Scaling : {str(ex)}")
 
 def view_main_data():
     if state.df is None: return ui.notify("Aucune table chargée")
-    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 text-white'):
-        ui.label('Aperçu du Dataset Principal (Top 50)').classes('text-h6 text-emerald-400 font-bold')
+    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white'):
+        ui.label('Aperçu du Dataset principal').classes('text-md font-bold text-emerald-400')
         ui.table(
             columns=[{'name': c, 'label': c, 'field': c} for c in state.df.columns],
             rows=state.df.head(50).to_dict('records')
-        ).classes('w-full bg-slate-950')
-        ui.button('Fermer', on_click=dialog.close).classes('bg-red-600')
+        ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+        ui.button('Fermer', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end')
     dialog.open()
 
 def apply_undo():
@@ -443,7 +445,7 @@ def apply_undo():
         act, prev = state.history.pop()
         state.future.append((act, state.df.copy()))
         state.df = prev
-        state.log(f"[UNDO] : Retour arrière sur l'action '{act}'")
+        state.log(f"[UNDO] Annulation de : {act}")
         sync_all_comboboxes()
 
 def apply_redo():
@@ -451,55 +453,44 @@ def apply_redo():
         act, nxt = state.future.pop()
         state.history.append((act, state.df.copy()))
         state.df = nxt
-        state.log(f"[REDO] : Réapplication de l'action '{act}'")
+        state.log(f"[REDO] Rétablissement de : {act}")
         sync_all_comboboxes()
-
-# ==========================================
-# 5. PARAMÈTRES DYNAMIQUES DES ALGORITHMES
-# ==========================================
 
 def refresh_algo_param_view():
     algo = state.algo_choice.value
     state.param_options_frame.clear()
     with state.param_options_frame:
         if algo in ['Lasso', 'Ridge', 'ElasticNet']:
-            state.alpha_input = ui.number(label='Alpha (Pénalité)', value=0.01, format='%.4f').classes('w-40')
-            state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-40')
+            state.alpha_input = ui.number(label='Alpha (Penalty)', value=0.01, format='%.4f').classes('w-40 rounded-xl')
+            state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-40 rounded-xl')
         elif algo == 'XGBoost':
-            state.xgb_n = ui.number(label='N Estimators', value=100).classes('w-40')
-            state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-40')
-            state.xgb_lr = ui.number(label='Learning Rate', value=0.1).classes('w-40')
+            state.xgb_n = ui.number(label='N Estimators', value=100).classes('w-40 rounded-xl')
+            state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-40 rounded-xl')
+            state.xgb_lr = ui.number(label='Learning Rate', value=0.1).classes('w-40 rounded-xl')
         elif algo == 'Neural Network':
-            state.nn_layers = ui.input(label='Layers (e.g. 100,50)', value="100,50").classes('w-40')
-            state.nn_iter = ui.number(label='Max Iter', value=200).classes('w-40')
+            state.nn_layers = ui.input(label='Layers (e.g. 100,50)', value="100,50").classes('w-40 rounded-xl')
+            state.nn_iter = ui.number(label='Max Iter', value=200).classes('w-40 rounded-xl')
         elif algo == 'EcoRETINA':
-            state.eco_loss = ui.select(['mse', 'mae', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-32')
-            state.eco_grid = ui.number(label='Grid step', value=0.005).classes('w-32')
+            state.eco_loss = ui.select(['mse', 'mae', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-32 rounded-xl')
+            state.eco_grid = ui.number(label='Grid step', value=0.005).classes('w-32 rounded-xl')
         else:
-            ui.label('Pas d\'hyperparamètres spécifiques requis pour OLS.').classes('text-gray-400 italic')
-
-# ==========================================
-# 6. PIPELINE MULTI-THREAD COMPULSAR CODE
-# ==========================================
+            ui.label('Configuration standard (Intercepteur de constante automatique inclus).').classes('text-slate-400 italic text-sm')
 
 async def trigger_pipeline_execution():
-    if state.df is None: return ui.notify("Veuillez importer des données !")
+    if state.df is None: return ui.notify("Aucune base exploitable !")
     target = state.main_target_select.value
     algo = state.algo_choice.value
     
-    # Collecter les colonnes cochées par l'utilisateur
     selected_features = []
     for child in state.features_checkbox_container:
         if isinstance(child, ui.checkbox) and child.value and child.text != target:
             selected_features.append(child.text)
             
-    if not selected_features:
-        return ui.notify("Veuillez cocher au moins une variable explicative (X) !")
+    if not selected_features: return ui.notify("Cochez au moins une variable explicative !")
 
-    state.algo_status_lbl.text = f"Calculs économétriques en cours pour {algo}..."
+    state.algo_status_lbl.text = "Exécution mathématique de la régression en tâche de fond..."
     state.algo_status_lbl.update()
     
-    # Extraction des hyperparamètres de l'UI de manière sécurisée
     config_args = {
         'alpha': getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value,
         'max_iter': int(getattr(state, 'max_iter_input', type('obj', (), {'value': 1000})).value),
@@ -512,14 +503,12 @@ async def trigger_pipeline_execution():
         'eco_grid': getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value,
     }
 
-    # Lancement asynchrone sécurisé non-bloquant
     res = await run.cpu_bound(execute_ml_math_core, algo, target, selected_features, config_args)
     
     run_id = f"Run_{time.strftime('%H%M%S')}"
     state.run_history[run_id] = res
     state.latest_run_by_algo[algo] = run_id
     
-    # Ajouter à la table comparative
     state.compare_table_ui.add_rows([{
         'run': run_id, 'algo': algo,
         'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
@@ -527,8 +516,8 @@ async def trigger_pipeline_execution():
         'mape_te': f"{res['metrics']['mape_te']:.2f}%", 'co2': f"{res['metrics']['emissions']:.5f}"
     }])
     
-    state.algo_status_lbl.text = f"Dernier succès : {run_id} ({algo})"
-    state.log(f" pipeline complété avec succès pour {algo}. R² Test = {res['metrics']['r2_te']:.4f}")
+    state.algo_status_lbl.text = f"Modèle sauvegardé : {run_id}"
+    state.log(f"Pipeline complété avec succès pour {algo}.")
 
 def execute_ml_math_core(algo, target, features, args):
     df_clean = state.df.dropna(subset=[target] + features).fillna(0)
@@ -536,7 +525,6 @@ def execute_ml_math_core(algo, target, features, args):
     y = df_clean[target].values
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
     tracker = EmissionsTracker(tracking_mode='process', log_level='error')
     tracker.start()
     
@@ -599,51 +587,44 @@ def execute_ml_math_core(algo, target, features, args):
         }
     }
 
-# ==========================================
-# 7. RAPPORTS GRAPHIQUES ET ANALYTIQUES
-# ==========================================
-
 def open_detailed_report():
     algo = state.algo_choice.value
     run_id = state.latest_run_by_algo.get(algo)
-    if not run_id: return ui.notify("Aucune exécution enregistrée pour cet algorithme !")
+    if not run_id: return ui.notify("Aucune analyse disponible pour cet algorithme !")
     
     run_data = state.run_history[run_id]
     y_test = run_data['y_test']
     y_test_pred = run_data['y_test_pred']
     
-    # Construction de la figure Matplotlib
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    fig.patch.set_facecolor('#1e293b')
+    fig.patch.set_facecolor('#0f172a')
     
-    axes[0].scatter(y_test, y_test_pred, alpha=0.6, color='#3b82f6')
-    axes[0].plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color='#10b981', linestyle='--')
-    axes[0].set_title('Valeurs Réelles vs Prédictions', color='white')
-    axes[0].set_facecolor('#0f172a')
+    axes[0].scatter(y_test, y_test_pred, alpha=0.6, color='#38bdf8')
+    axes[0].plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color='#34d399', linestyle='--')
+    axes[0].set_title('Reals vs Predictions', color='white', fontsize=10)
+    axes[0].set_facecolor('#1e293b')
     axes[0].tick_params(colors='white')
     
     residuals = y_test - y_test_pred
-    axes[1].hist(residuals, bins=15, color='#ef4444', alpha=0.8)
-    axes[1].set_title('Distribution des Résidus', color='white')
-    axes[1].set_facecolor('#0f172a')
+    axes[1].hist(residuals, bins=15, color='#f87171', alpha=0.8)
+    axes[1].set_title('Residuals Split', color='white', fontsize=10)
+    axes[1].set_facecolor('#1e293b')
     axes[1].tick_params(colors='white')
     
-    # Encodage Base64 du graphique pour insertion HTML
     buf = BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight')
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
     buf.seek(0)
     img_b64 = base64.b64encode(buf.read()).decode('utf-8')
     plt.close(fig)
     
-    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-4xl bg-slate-900 text-white p-6'):
-        ui.label(f"Rapport Statistique Graphique - {run_id}").classes('text-xl font-bold text-emerald-400')
-        ui.html(f'<div class="flex justify-center"><img src="data:image/png;base64,{img_b64}"/></div>')
-        ui.button('Fermer', on_click=dialog.close).classes('bg-red-600 self-end mt-4')
+    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-4xl bg-slate-900 rounded-2xl text-white p-6 border border-slate-800'):
+        ui.label(f"Indicateurs Analytiques - {run_id}").classes('text-lg font-black text-emerald-400')
+        ui.html(f'<div class="flex justify-center mt-2 rounded-xl overflow-hidden border border-slate-800"><img src="data:image/png;base64,{img_b64}"/></div>')
+        ui.button('Fermer le rapport', on_click=dialog.close).classes('bg-slate-800 rounded-xl mt-4 self-end')
     dialog.open()
 
 def export_comparison_matrix():
-    # Génération d'une chaine CSV à la volée pour téléchargement
-    if not state.compare_table_ui.rows: return ui.notify("Aucune donnée à exporter")
+    if not state.compare_table_ui.rows: return ui.notify("Aucune donnée disponible")
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(['Run_ID', 'Algorithm', 'R2_Train', 'R2_Test', 'MAPE_Test', 'CO2_kg'])
@@ -651,17 +632,14 @@ def export_comparison_matrix():
         writer.writerow([r['run'], r['algo'], r['r2_tr'], r['r2_te'], r['mape_te'], r['co2']])
     ui.download(output.getvalue().encode('utf-8'), 'ML_Workbench_Benchmark.csv')
 
-# ==========================================
-# 8. ETAPE 4 : LOGIQUE D'INFERENCE (PREDICT)
-# ==========================================
-
 def import_predict_dataset(e):
     try:
-        state.df_predict = pd.read_csv(e.content) if e.name.endswith('.csv') else pd.read_excel(e.content)
-        state.predict_file_lbl.text = f"Fichier inférence chargé : {e.name} ({len(state.df_predict)} lignes)"
-        state.log(f"Jeu de données pour prédiction importé : {e.name}")
+        file_bytes = BytesIO(e.content.read())
+        state.df_predict = pd.read_csv(file_bytes)
+        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
+        state.log("Base d'inférence chargée.")
     except Exception as ex:
-        ui.notify(f"Erreur chargement inférence : {str(ex)}")
+        ui.notify(f"Erreur d'importation : {str(ex)}")
 
 def sync_predict_runs():
     runs = list(state.run_history.keys())
@@ -669,9 +647,9 @@ def sync_predict_runs():
     if runs: state.predict_run_select.value = runs[-1]
 
 def execute_inference_process():
-    if state.df_predict is None: return ui.notify("Veuillez d'abord charger un fichier d'inférence (Étape 1)")
+    if state.df_predict is None: return ui.notify("Importez d'abord une base !")
     run_id = state.predict_run_select.value
-    if not run_id: return ui.notify("Veuillez sélectionner un modèle entraîné (Étape 2)")
+    if not run_id: return ui.notify("Sélectionnez un modèle ajusté !")
     
     run_data = state.run_history[run_id]
     raw_feats = run_data['raw_features']
@@ -681,25 +659,23 @@ def execute_inference_process():
     
     try:
         X_new = state.df_predict[raw_feats].fillna(0).values
-        if 'const' in feature_names:
-            X_new = sm.add_constant(X_new, has_constant='add')
-            
+        if 'const' in feature_names: X_new = sm.add_constant(X_new, has_constant='add')
         preds = model.predict(pd.DataFrame(X_new, columns=feature_names))
         pred_col = f"Predicted_{target_col}_{run_id}"
         state.df_predict[pred_col] = preds
-        ui.notify(f"Prédictions injectées avec succès dans la colonne '{pred_col}' !")
+        ui.notify(f"Prédictions générées dans '{pred_col}' !")
     except Exception as ex:
-        ui.notify(f"Erreur d'inférence : {str(ex)}")
+        ui.notify(f"Erreur mathématique lors du calcul : {str(ex)}")
 
 def view_predict_data():
-    if state.df_predict is None: return ui.notify("Aucune donnée d'inférence chargée.")
-    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 text-white'):
-        ui.label('Données Inférence & Prédictions générées').classes('text-h6 text-emerald-400')
+    if state.df_predict is None: return ui.notify("Aucune base d'inférence")
+    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white'):
+        ui.label('Vérification des Prédictions Appliquées').classes('text-md font-bold text-emerald-400')
         ui.table(
             columns=[{'name': c, 'label': c, 'field': c} for c in state.df_predict.columns],
             rows=state.df_predict.head(50).to_dict('records')
-        ).classes('w-full bg-slate-950')
-        ui.button('Fermer', on_click=dialog.close).classes('bg-red-600')
+        ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+        ui.button('Fermer', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end')
     dialog.open()
 
 def export_predicted_csv():
@@ -708,5 +684,5 @@ def export_predicted_csv():
     state.df_predict.to_csv(csv_buf, index=False)
     ui.download(csv_buf.getvalue().encode('utf-8'), 'EcoRETINA_Predictions_Output.csv')
 
-# Lancement de l'application Web sur le port système Render
-ui.run(port=int(os.environ.get('PORT', 8080)), title="EcoRETINA AI Workbench", reload=False)
+# Liaison réseau définitive sur le port public attribué par Render
+ui.run(port=int(os.environ.get('PORT', 8080)), title="EcoRETINA Intelligence", reload=False)
