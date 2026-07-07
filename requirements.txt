@@ -1,4 +1,4 @@
-nicegui
+nicegui==1.4.22
 scikit-learn
 pandas
 numpy
