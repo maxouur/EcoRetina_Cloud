@@ -343,13 +343,35 @@ def toggle_split_view(strategy):
 
 def import_main_dataset(e):
     try:
-        file_bytes = BytesIO(e.content.read())
+        # NiceGUI fournit e.content qui agit comme un fichier ouvert en binaire.
+        # On utilise directement e.content (ou e.content.read() si c'est un flux brut)
+        # Pour être 100% compatible, on lit e.content.read() s'il a la méthode, sinon e.content directement.
+        data_stream = e.content.read() if hasattr(e.content, 'read') else e.content
+        
+        # On remet dans un BytesIO pour Pandas
+        from io import BytesIO
+        file_bytes = BytesIO(data_stream)
+        
+        # Lecture par Pandas
         state.df = pd.read_csv(file_bytes)
+        
         state.save_state("Import dataset")
         state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
         sync_all_comboboxes()
     except Exception as ex:
         state.log(f"Échec de chargement : {str(ex)}")
+
+def import_predict_dataset(e):
+    try:
+        data_stream = e.content.read() if hasattr(e.content, 'read') else e.content
+        from io import BytesIO
+        file_bytes = BytesIO(data_stream)
+        
+        state.df_predict = pd.read_csv(file_bytes)
+        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
+        state.log("Base d'inférence chargée avec succès.")
+    except Exception as ex:
+        ui.notify(f"Erreur d'importation : {str(ex)}")
 
 def sync_all_comboboxes():
     if state.df is None: return
@@ -631,15 +653,6 @@ def export_comparison_matrix():
     for r in state.compare_table_ui.rows:
         writer.writerow([r['run'], r['algo'], r['r2_tr'], r['r2_te'], r['mape_te'], r['co2']])
     ui.download(output.getvalue().encode('utf-8'), 'ML_Workbench_Benchmark.csv')
-
-def import_predict_dataset(e):
-    try:
-        file_bytes = BytesIO(e.content.read())
-        state.df_predict = pd.read_csv(file_bytes)
-        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
-        state.log("Base d'inférence chargée.")
-    except Exception as ex:
-        ui.notify(f"Erreur d'importation : {str(ex)}")
 
 def sync_predict_runs():
     runs = list(state.run_history.keys())
