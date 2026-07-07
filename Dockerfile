@@ -1,34 +1,42 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Désactiver les questions interactives de Linux
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Étape clé : Installer un mini-bureau Linux virtuel (Xvfb + Fluxbox + noVNC)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb \
-    x11vnc \
-    fluxbox \
-    novnc \
-    websockify \
-    python3-tk \
-    tk-dev \
-    fonts-dejavu \
-    fonts-freefont-ttf \
-    && rm -rf /var/lib/apt/lists/*
+# Éviter les écritures de cache disque inutiles pour Docker
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# Installer tes dépendances Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Installer les dépendances système minimales pour Tkinter et la compilation de XGBoost
+RUN apt-get update && apt-get install -y \
+    python3-tk \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copier ton code et tes images
-COPY . .
+# Installer les bibliothèques requises
+RUN pip install --no-cache-dir \
+    nicegui \
+    customtkinter \
+    scikit-learn \
+    pandas \
+    numpy \
+    scipy \
+    xgboost \
+    statsmodels \
+    codecarbon \
+    matplotlib \
+    pillow \
+    openai \
+    anthropic \
+    groq \
+    google-genai \
+    requests \
+    openpyxl
 
-# Configurer l'écran virtuel
-ENV DISPLAY=:0
-# Rendre le script exécutable
-RUN chmod +x entrypoint.sh
+# Copier l'ensemble des fichiers du dépôt GitHub
+COPY . /app
 
-# Render attribue un port dynamiquement, pas besoin d'EXPOSE fixe
-CMD ["./entrypoint.sh"]
+# Déclarer le port réseau par défaut
+EXPOSE 8080
+
+# Lancer directement l'application Web Python
+CMD ["python", "app.py"]
