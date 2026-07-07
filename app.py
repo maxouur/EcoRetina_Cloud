@@ -197,7 +197,7 @@ def main_page():
                             ui.label('Dataset Import & Sample Strategy').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
                             
                             # METHODE UNIVERSELLE : On extrait directement les octets réseau
-                           ui.upload(label='Glissez-déposez votre CSV', on_upload=import_main_dataset_from_event).classes('w-full rounded-2xl')
+                            ui.upload(label='Glissez-déposez votre CSV', on_upload=import_main_dataset_from_event).classes('w-full rounded-2xl')
                             
                             ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4 rounded-xl')
                             with ui.column().classes('w-full') as split_container:
