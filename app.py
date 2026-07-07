@@ -197,7 +197,7 @@ def main_page():
                             ui.label('Dataset Import & Sample Strategy').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
                             
                             # METHODE UNIVERSELLE : On extrait directement les octets réseau
-                            ui.upload(label='Glissez-déposez votre CSV', on_upload=lambda e: import_main_dataset_from_bytes(e.content.read()), auto_upload=True).classes('w-full rounded-2xl')
+                           ui.upload(label='Glissez-déposez votre CSV', on_upload=import_main_dataset_from_event).classes('w-full rounded-2xl')
                             
                             ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4 rounded-xl')
                             with ui.column().classes('w-full') as split_container:
@@ -291,7 +291,7 @@ def main_page():
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('1. Fichier d\'Inférence').classes('text-sm font-bold text-slate-300 mb-2')
                                 
-                                ui.upload(label='Déposez le fichier de test', on_upload=lambda e: import_predict_dataset_from_bytes(e.content.read()), auto_upload=True).classes('w-full rounded-xl')
+                                ui.upload(label='Déposez le fichier de test', on_upload=import_predict_dataset_from_event).classes('w-full rounded-xl')
                                 state.predict_file_lbl = ui.label('Aucun fichier d\'inférence chargé').classes('text-slate-400 font-mono text-xs mt-2')
                             
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
