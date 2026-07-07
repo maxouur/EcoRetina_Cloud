@@ -322,12 +322,17 @@ def main_page():
 # ==========================================
 # 4. GESTION DU PIPELINE DE LECTURE BINAIRE
 # ==========================================
-
 def import_main_dataset_from_event(e):
     try:
-        # NiceGUI extrait directement le texte du fichier de façon universelle
-        text_data = e.file.text()
+        # Lecture binaire brute depuis le flux réseau de NiceGUI (Infaillible)
+        raw_bytes = e.content.read()
         
+        # Détection de l'encodage (Excel utilise souvent Latin-1 en Europe)
+        try:
+            text_data = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text_data = raw_bytes.decode('latin-1')
+            
         # Algorithme de détection automatique du séparateur (virgule ou point-virgule)
         first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
         sep = ','
@@ -336,25 +341,31 @@ def import_main_dataset_from_event(e):
         elif '\t' in first_line:
             sep = '\t'
             
-        # Chargement Pandas via un StringIO
+        # Chargement Pandas via StringIO
         from io import StringIO
         state.df = pd.read_csv(StringIO(text_data), sep=sep)
         
-        # Nettoyage de sécurité des noms de colonnes
+        # Nettoyage strict des espaces invisibles dans les noms de colonnes
         state.df.columns = [str(c).strip() for c in state.df.columns]
         
         state.save_state("Import dataset")
         state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables). Séparateur : '{sep}'")
         
-        # On force la mise à jour des éléments de l'interface
+        # Forcer la synchronisation et le rafraîchissement immédiat des variables
         sync_all_comboboxes()
     except Exception as ex:
         state.log(f"Échec de chargement : {str(ex)}")
+        import traceback
         print(traceback.format_exc())
 
 def import_predict_dataset_from_event(e):
     try:
-        text_data = e.file.text()
+        raw_bytes = e.content.read()
+        try:
+            text_data = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text_data = raw_bytes.decode('latin-1')
+            
         first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
         sep = ','
         if ';' in first_line and first_line.count(';') > first_line.count(','):
@@ -368,7 +379,6 @@ def import_predict_dataset_from_event(e):
         state.log("Base d'inférence chargée avec succès.")
     except Exception as ex:
         ui.notify(f"Erreur d'importation : {str(ex)}")
-
 # ==========================================
 # 5. LOGIQUE SECONDAIRE DE NETTOYAGE
 # ==========================================
@@ -388,25 +398,25 @@ def sync_all_comboboxes():
     num_cols = [str(c) for c in state.df.select_dtypes(include=[np.number]).columns]
     cat_cols = [str(c) for c in state.df.select_dtypes(include=['object', 'category']).columns]
     
-    # 1. Mise à jour des options des menus déroulants
+    # Mise à jour des listes de choix
     state.outlier_select.options = num_cols
     if num_cols: state.outlier_select.value = num_cols[0]
-    state.outlier_select.update() # <-- CRUCIAL POUR NICEGUI
+    state.outlier_select.update()
     
     state.cat_select.options = cat_cols
     if cat_cols: state.cat_select.value = cat_cols[0]
-    state.cat_select.update() # <-- CRUCIAL POUR NICEGUI
+    state.cat_select.update()
     
     state.main_target_select.options = cols
     if cols: state.main_target_select.value = cols[0]
-    state.main_target_select.update() # <-- CRUCIAL POUR NICEGUI
+    state.main_target_select.update()
     
-    # 2. Reconstruction et rafraîchissement des cases à cocher (Features)
+    # Reconstruction physique des cases à cocher dans le HTML
     state.features_checkbox_container.clear()
     with state.features_checkbox_container:
         for c in cols:
             ui.checkbox(text=c, value=True).classes('text-slate-200 mx-2 font-mono text-sm')
-    state.features_checkbox_container.update() # <-- CRUCIAL POUR NICEGUI
+    state.features_checkbox_container.update()
 
 def update_cat_reference(e):
     if state.df is None or not e.value: return
@@ -468,13 +478,17 @@ def run_scaling_process():
 
 def view_main_data():
     if state.df is None: return ui.notify("Aucune table chargée")
-    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white'):
-        ui.label('Aperçu du Dataset principal').classes('text-md font-bold text-emerald-400')
+    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white p-4'):
+        ui.label('Aperçu du Dataset principal (Top 50)').classes('text-md font-bold text-emerald-400')
+        
+        # Nettoyage des lignes pour éviter les conflits d'objets complexes non-sériatrisables
+        clean_rows = [{str(k): str(v) for k, v in record.items()} for record in state.df.head(50).to_dict('records')]
+        
         ui.table(
-            columns=[{'name': c, 'label': c, 'field': c} for c in state.df.columns],
-            rows=state.df.head(50).to_dict('records')
+            columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in state.df.columns],
+            rows=clean_rows
         ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
-        ui.button('Fermer', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end')
+        ui.button('Fermer', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2')
     dialog.open()
 
 def apply_undo():
