@@ -362,7 +362,14 @@ def import_main_dataset_from_event(e):
 
 async def import_main_dataset_from_event(e):
     try:
-        raw_bytes = await run.io_bound(e.content.read)
+        file_obj = getattr(e, 'content', None)
+        if file_obj is None:
+            contents = getattr(e, 'contents', None)
+            file_obj = contents[0] if contents else None
+        if file_obj is None:
+            raise AttributeError(f"Attributs disponibles sur l'event : {[a for a in dir(e) if not a.startswith('_')]}")
+
+        raw_bytes = await run.io_bound(file_obj.read)
         state.df = await run.io_bound(_parse_csv_bytes, raw_bytes)
 
         state.save_state("Import dataset")
@@ -371,9 +378,6 @@ async def import_main_dataset_from_event(e):
     except Exception as ex:
         state.log(f"Échec de chargement : {str(ex)}")
         print(traceback.format_exc())
-
-    except Exception as ex:
-        ui.notify(f"Erreur d'importation : {str(ex)}")
 
 async def import_predict_dataset_from_event(e):
     try:
