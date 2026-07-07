@@ -362,12 +362,7 @@ def import_main_dataset_from_event(e):
 
 async def import_main_dataset_from_event(e):
     try:
-        file_obj = getattr(e, 'content', None)
-        if file_obj is None:
-            contents = getattr(e, 'contents', None)
-            file_obj = contents[0] if contents else None
-        if file_obj is None:
-            raise AttributeError(f"Attributs disponibles sur l'event : {[a for a in dir(e) if not a.startswith('_')]}")
+        file_obj = e.file
 
         raw_bytes = await run.io_bound(file_obj.read)
         state.df = await run.io_bound(_parse_csv_bytes, raw_bytes)
@@ -381,7 +376,8 @@ async def import_main_dataset_from_event(e):
 
 async def import_predict_dataset_from_event(e):
     try:
-        raw_bytes = await run.io_bound(e.content.read)
+        file_obj = e.file
+        raw_bytes = await run.io_bound(file_obj.read)
         state.df_predict = await run.io_bound(_parse_csv_bytes, raw_bytes)
 
         state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
