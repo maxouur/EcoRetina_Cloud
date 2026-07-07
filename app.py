@@ -358,27 +358,48 @@ def import_main_dataset_from_event(e):
         import traceback
         print(traceback.format_exc())
 
-def import_predict_dataset_from_event(e):
+async def import_main_dataset_from_event(e):
     try:
-        raw_bytes = e.content.read()
-        try:
-            text_data = raw_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            text_data = raw_bytes.decode('latin-1')
-            
-        first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
-        sep = ','
-        if ';' in first_line and first_line.count(';') > first_line.count(','):
-            sep = ';'
-            
-        from io import StringIO
-        state.df_predict = pd.read_csv(StringIO(text_data), sep=sep)
-        state.df_predict.columns = [str(c).strip() for c in state.df_predict.columns]
-        
+        raw_bytes = await run.io_bound(e.content.read)
+        state.df = await run.io_bound(_parse_csv_bytes, raw_bytes)
+
+        state.save_state("Import dataset")
+        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
+        sync_all_comboboxes()
+    except Exception as ex:
+        state.log(f"Échec de chargement : {str(ex)}")
+        print(traceback.format_exc())
+
+    except Exception as ex:
+        ui.notify(f"Erreur d'importation : {str(ex)}")
+
+async def import_predict_dataset_from_event(e):
+    try:
+        raw_bytes = await run.io_bound(e.content.read)
+        state.df_predict = await run.io_bound(_parse_csv_bytes, raw_bytes)
+
         state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
         state.log("Base d'inférence chargée avec succès.")
     except Exception as ex:
         ui.notify(f"Erreur d'importation : {str(ex)}")
+        state.log(f"Échec de chargement (inférence) : {str(ex)}")
+
+def _parse_csv_bytes(raw_bytes):
+    try:
+        text_data = raw_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        text_data = raw_bytes.decode('latin-1')
+
+    first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
+    sep = ','
+    if ';' in first_line and first_line.count(';') > first_line.count(','):
+        sep = ';'
+    elif '\t' in first_line:
+        sep = '\t'
+
+    df = pd.read_csv(StringIO(text_data), sep=sep)
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
 # ==========================================
 # 5. LOGIQUE SECONDAIRE DE NETTOYAGE
 # ==========================================
