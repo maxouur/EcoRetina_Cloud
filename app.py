@@ -324,47 +324,10 @@ def main_page():
 # ==========================================
 # 4. GESTION DU PIPELINE DE LECTURE BINAIRE
 # ==========================================
-def import_main_dataset_from_event(e):
-    try:
-        # Lecture binaire brute depuis le flux réseau de NiceGUI (Infaillible)
-        raw_bytes = e.content.read()
-        
-        # Détection de l'encodage (Excel utilise souvent Latin-1 en Europe)
-        try:
-            text_data = raw_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            text_data = raw_bytes.decode('latin-1')
-            
-        # Algorithme de détection automatique du séparateur (virgule ou point-virgule)
-        first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
-        sep = ','
-        if ';' in first_line and first_line.count(';') > first_line.count(','):
-            sep = ';'
-        elif '\t' in first_line:
-            sep = '\t'
-            
-        # Chargement Pandas via StringIO
-        from io import StringIO
-        state.df = pd.read_csv(StringIO(text_data), sep=sep)
-        
-        # Nettoyage strict des espaces invisibles dans les noms de colonnes
-        state.df.columns = [str(c).strip() for c in state.df.columns]
-        
-        state.save_state("Import dataset")
-        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables). Séparateur : '{sep}'")
-        
-        # Forcer la synchronisation et le rafraîchissement immédiat des variables
-        sync_all_comboboxes()
-    except Exception as ex:
-        state.log(f"Échec de chargement : {str(ex)}")
-        import traceback
-        print(traceback.format_exc())
-
 async def import_main_dataset_from_event(e):
     try:
         file_obj = e.file
-
-        raw_bytes = await run.io_bound(file_obj.read)
+        raw_bytes = await file_obj.read()
         state.df = await run.io_bound(_parse_csv_bytes, raw_bytes)
 
         state.save_state("Import dataset")
@@ -374,6 +337,18 @@ async def import_main_dataset_from_event(e):
         state.log(f"Échec de chargement : {str(ex)}")
         print(traceback.format_exc())
 
+async def import_predict_dataset_from_event(e):
+    try:
+        file_obj = e.file
+        raw_bytes = await file_obj.read()
+        state.df_predict = await run.io_bound(_parse_csv_bytes, raw_bytes)
+
+        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
+        state.log("Base d'inférence chargée avec succès.")
+    except Exception as ex:
+        ui.notify(f"Erreur d'importation : {str(ex)}")
+        state.log(f"Échec de chargement (inférence) : {str(ex)}")
+        
 async def import_predict_dataset_from_event(e):
     try:
         file_obj = e.file
