@@ -357,23 +357,29 @@ def toggle_split_view(strategy):
 
 def sync_all_comboboxes():
     if state.df is None: return
-    cols = list(state.df.columns)
-    num_cols = list(state.df.select_dtypes(include=[np.number]).columns)
-    cat_cols = list(state.df.select_dtypes(include=['object', 'category']).columns)
+    cols = [str(c) for c in state.df.columns]
+    num_cols = [str(c) for c in state.df.select_dtypes(include=[np.number]).columns]
+    cat_cols = [str(c) for c in state.df.select_dtypes(include=['object', 'category']).columns]
     
+    # 1. Mise à jour des options des menus déroulants
     state.outlier_select.options = num_cols
     if num_cols: state.outlier_select.value = num_cols[0]
+    state.outlier_select.update() # <-- CRUCIAL POUR NICEGUI
     
     state.cat_select.options = cat_cols
     if cat_cols: state.cat_select.value = cat_cols[0]
+    state.cat_select.update() # <-- CRUCIAL POUR NICEGUI
     
     state.main_target_select.options = cols
     if cols: state.main_target_select.value = cols[0]
+    state.main_target_select.update() # <-- CRUCIAL POUR NICEGUI
     
+    # 2. Reconstruction et rafraîchissement des cases à cocher (Features)
     state.features_checkbox_container.clear()
     with state.features_checkbox_container:
         for c in cols:
             ui.checkbox(text=c, value=True).classes('text-slate-200 mx-2 font-mono text-sm')
+    state.features_checkbox_container.update() # <-- CRUCIAL POUR NICEGUI
 
 def update_cat_reference(e):
     if state.df is None or not e.value: return
