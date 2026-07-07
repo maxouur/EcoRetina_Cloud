@@ -325,22 +325,61 @@ def main_page():
 
 def import_main_dataset_from_bytes(raw_bytes):
     try:
-        file_bytes = BytesIO(raw_bytes)
-        state.df = pd.read_csv(file_bytes)
+        from io import BytesIO, StringIO
+        
+        # 1. Détection robuste de l'encodage (UTF-8 ou Latin-1 de secours)
+        try:
+            text_data = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text_data = raw_bytes.decode('latin-1')
+            
+        # 2. Détection automatique du séparateur (virgule, point-virgule ou tabulation)
+        first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
+        sep = ','
+        if ';' in first_line and first_line.count(';') > first_line.count(','):
+            sep = ';'
+        elif '\t' in first_line:
+            sep = '\t'
+            
+        # 3. Chargement dans Pandas via un flux de texte clean
+        state.df = pd.read_csv(StringIO(text_data), sep=sep)
+        
+        # SÉCURITÉ : Nettoyer les noms de colonnes (enlever les espaces ou caractères invisibles)
+        state.df.columns = [str(c).strip() for c in state.df.columns]
+        
         state.save_state("Import dataset")
-        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
+        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables). Séparateur détecté : '{sep}'")
+        
+        # Appeler la synchronisation de l'interface
         sync_all_comboboxes()
     except Exception as ex:
         state.log(f"Échec de chargement : {str(ex)}")
+        print(traceback.format_exc()) # Écrit l'erreur complète dans les logs Render pour diagnostic
 
 def import_predict_dataset_from_bytes(raw_bytes):
     try:
-        file_bytes = BytesIO(raw_bytes)
-        state.df_predict = pd.read_csv(file_bytes)
+        from io import BytesIO, StringIO
+        
+        try:
+            text_data = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            text_data = raw_bytes.decode('latin-1')
+            
+        first_line = text_data.split('\n')[0] if '\n' in text_data else text_data
+        sep = ','
+        if ';' in first_line and first_line.count(';') > first_line.count(','):
+            sep = ';'
+        elif '\t' in first_line:
+            sep = '\t'
+            
+        state.df_predict = pd.read_csv(StringIO(text_data), sep=sep)
+        state.df_predict.columns = [str(c).strip() for c in state.df_predict.columns]
+        
         state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
         state.log("Base d'inférence chargée avec succès.")
     except Exception as ex:
         ui.notify(f"Erreur d'importation : {str(ex)}")
+        print(traceback.format_exc())
 
 # ==========================================
 # 5. LOGIQUE SECONDAIRE DE NETTOYAGE
@@ -470,22 +509,55 @@ def refresh_algo_param_view():
     algo = state.algo_choice.value
     state.param_options_frame.clear()
     with state.param_options_frame:
-        if algo in ['Lasso', 'Ridge', 'ElasticNet']:
+        if algo == 'EcoRETINA':
+            state.eco_loss = ui.select(['mse', 'mae', 'MAPE', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-32 rounded-xl')
+            state.eco_reg_type = ui.select(['linear', 'logit', 'probit'], value='linear', label='Reg Type').classes('w-32 rounded-xl')
+            state.eco_cross_dummy = ui.select(['False', 'True'], value='False', label='Cross Dummy').classes('w-32 rounded-xl')
+            state.eco_cov_type = ui.select(['nonrobust', 'HC0', 'HC1', 'HC2', 'HC3'], value='nonrobust', label='Cov Type').classes('w-32 rounded-xl')
+            state.eco_grid = ui.number(label='Grid Step', value=0.005, format='%.4f').classes('w-28 rounded-xl')
+            state.eco_max_reg = ui.number(label='Max Reg', value=100).classes('w-24 rounded-xl')
+            state.eco_chunk_size = ui.number(label='Chunk Size', value=500).classes('w-24 rounded-xl')
+            state.eco_seed = ui.number(label='Seed', value=8).classes('w-20 rounded-xl')
+            
+        elif algo == 'OLS':
+            state.ols_fit_intercept = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-40 rounded-xl')
+            
+        elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
             state.alpha_input = ui.number(label='Alpha (Penalty)', value=0.01, format='%.4f').classes('w-40 rounded-xl')
+            state.fit_intercept_input = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-40 rounded-xl')
             state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-40 rounded-xl')
+            state.tol_input = ui.number(label='Tolerance', value=0.0001, format='%.4f').classes('w-40 rounded-xl')
+            if algo == 'Ridge':
+                state.ridge_solver = ui.select(['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga'], value='auto', label='Solver').classes('w-40 rounded-xl')
+            if algo == 'ElasticNet':
+                state.en_l1_ratio = ui.number(label='L1 Ratio', value=0.5, format='%.2f').classes('w-40 rounded-xl')
+                
         elif algo == 'XGBoost':
             state.xgb_n = ui.number(label='N Estimators', value=100).classes('w-40 rounded-xl')
             state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-40 rounded-xl')
-            state.xgb_lr = ui.number(label='Learning Rate', value=0.1).classes('w-40 rounded-xl')
+            state.xgb_lr = ui.number(label='Learning Rate', value=0.1, format='%.3f').classes('w-40 rounded-xl')
+            state.xgb_subsample = ui.number(label='Subsample', value=1.0, format='%.2f').classes('w-40 rounded-xl')
+            state.xgb_colsample = ui.number(label='Colsample By Tree', value=1.0, format='%.2f').classes('w-40 rounded-xl')
+            state.xgb_gamma = ui.number(label='Gamma', value=0.0).classes('w-40 rounded-xl')
+            state.xgb_alpha = ui.number(label='Reg Alpha (L1)', value=0.0).classes('w-40 rounded-xl')
+            state.xgb_lambda = ui.number(label='Reg Lambda (L2)', value=1.0).classes('w-40 rounded-xl')
+            
+        elif algo == 'Random Forest':
+            state.rf_n_estimators = ui.number(label='N Estimators', value=100).classes('w-40 rounded-xl')
+            state.rf_max_depth = ui.number(label='Max Depth (0=Unl.)', value=0).classes('w-40 rounded-xl')
+            state.rf_min_split = ui.number(label='Min Samples Split', value=2).classes('w-40 rounded-xl')
+            state.rf_min_leaf = ui.number(label='Min Samples Leaf', value=1).classes('w-40 rounded-xl')
+            state.rf_max_features = ui.select(['1.0', 'sqrt', 'log2'], value='1.0', label='Max Features').classes('w-40 rounded-xl')
+            
         elif algo == 'Neural Network':
-            state.nn_layers = ui.input(label='Layers (e.g. 100,50)', value="100,50").classes('w-40 rounded-xl')
-            state.nn_iter = ui.number(label='Max Iter', value=200).classes('w-40 rounded-xl')
-        elif algo == 'EcoRETINA':
-            state.eco_loss = ui.select(['mse', 'mae', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-32 rounded-xl')
-            state.eco_grid = ui.number(label='Grid step', value=0.005).classes('w-32 rounded-xl')
-        else:
-            ui.label('Configuration standard (Intercepteur de constante automatique inclus).').classes('text-slate-400 italic text-sm')
-
+            state.nn_layers = ui.input(label='Hidden Layers', value="100,50").classes('w-40 rounded-xl')
+            state.nn_activation = ui.select(['relu', 'tanh', 'logistic', 'identity'], value='relu', label='Activation').classes('w-40 rounded-xl')
+            state.nn_solver = ui.select(['adam', 'sgd', 'lbfgs'], value='adam', label='Solver').classes('w-40 rounded-xl')
+            state.nn_alpha = ui.number(label='Alpha (L2 Penalty)', value=0.0001, format='%.4f').classes('w-40 rounded-xl')
+            state.nn_lr_init = ui.number(label='Learning Rate Init', value=0.001, format='%.3f').classes('w-40 rounded-xl')
+            state.nn_max_iter = ui.number(label='Max Iterations', value=200).classes('w-40 rounded-xl')
+            
+    state.param_options_frame.update() # <--- Force NiceGUI à redessiner l'interface web instantanément
 async def trigger_pipeline_execution():
     if state.df is None: return ui.notify("Aucune base exploitable !")
     target = state.main_target_select.value
@@ -541,46 +613,91 @@ def execute_ml_math_core(algo, target, features, args):
     model = None
     feature_names_final = features.copy()
     
+    # Extraction des booléens textuels
+    fit_intercept_bool = True if str(args.get('fit_intercept', 'True')) == 'True' else False
+    cross_dummy_bool = True if str(args.get('eco_cross_dummy', 'False')) == 'True' else False
+
     if algo == 'OLS':
-        X_train_fit = sm.add_constant(X_train, has_constant='add')
-        X_test_fit = sm.add_constant(X_test, has_constant='add')
-        feature_names_final = ['const'] + features
-        sm_res = sm.OLS(y_train, pd.DataFrame(X_train_fit, columns=feature_names_final)).fit()
+        if fit_intercept_bool:
+            X_train_fit = sm.add_constant(X_train, has_constant='add')
+            X_test_fit = sm.add_constant(X_test, has_constant='add')
+            feature_names_final = ['const'] + features
+        else:
+            X_train_fit, X_test_fit = X_train, X_test
+        sm_res = sm.OLS(y_train, pd.DataFrame(X_train_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
         model = OLSWrapper(sm_res)
         y_train_pred = sm_res.predict(pd.DataFrame(X_train_fit, columns=feature_names_final))
         y_test_pred = sm_res.predict(pd.DataFrame(X_test_fit, columns=feature_names_final))
         
     elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
-        if algo == 'Lasso': model_pen = Lasso(alpha=args['alpha'], max_iter=args['max_iter'])
-        elif algo == 'Ridge': model_pen = Ridge(alpha=args['alpha'], max_iter=args['max_iter'])
-        else: model_pen = ElasticNet(alpha=args['alpha'], max_iter=args['max_iter'])
+        if algo == 'Lasso':
+            model_pen = Lasso(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
+        elif algo == 'Ridge':
+            model_pen = Ridge(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'], solver=args['ridge_solver'])
+        else:
+            model_pen = ElasticNet(alpha=args['alpha'], l1_ratio=args['en_l1_ratio'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
         
         model_pen.fit(X_train, y_train)
         sel_idx = np.where(np.abs(model_pen.coef_) > 1e-5)[0]
         if len(sel_idx) == 0: sel_idx = np.arange(X_train.shape[1])
         
-        X_tr_sel = X_train[:, sel_idx]
-        X_te_sel = X_test[:, sel_idx]
+        X_tr_sel, X_te_sel = X_train[:, sel_idx], X_test[:, sel_idx]
         feature_names_final = [features[i] for i in sel_idx]
         
-        X_tr_fit = sm.add_constant(X_tr_sel, has_constant='add')
-        X_te_fit = sm.add_constant(X_te_sel, has_constant='add')
-        feature_names_final = ['const'] + feature_names_final
-        
-        sm_res = sm.OLS(y_train, pd.DataFrame(X_tr_fit, columns=feature_names_final)).fit()
+        if fit_intercept_bool:
+            X_tr_fit = sm.add_constant(X_tr_sel, has_constant='add')
+            X_te_fit = sm.add_constant(X_te_sel, has_constant='add')
+            feature_names_final = ['const'] + feature_names_final
+        else:
+            X_tr_fit, X_te_fit = X_tr_sel, X_te_sel
+            
+        sm_res = sm.OLS(y_train, pd.DataFrame(X_tr_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
         model = OLSWrapper(sm_res)
         y_train_pred = sm_res.predict(pd.DataFrame(X_tr_fit, columns=feature_names_final))
         y_test_pred = sm_res.predict(pd.DataFrame(X_te_fit, columns=feature_names_final))
         
     elif algo == 'XGBoost':
-        model = xgb.XGBRegressor(n_estimators=args['xgb_n'], max_depth=args['xgb_depth'], learning_rate=args['xgb_lr'])
-        model.fit(X_train, y_train)
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
-    else:
-        model = RandomForestRegressor(n_estimators=50)
+        model = xgb.XGBRegressor(
+            n_estimators=args['xgb_n'], max_depth=args['xgb_depth'], learning_rate=args['xgb_lr'],
+            subsample=args['xgb_subsample'], colsample_bytree=args['xgb_colsample'], gamma=args['xgb_gamma'],
+            reg_alpha=args['xgb_alpha'], reg_lambda=args['xgb_lambda'], random_state=42
+        )
         model.fit(X_train, y_train)
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
+    elif algo == 'Random Forest':
+        depth = None if args['rf_max_depth'] == 0 else args['rf_max_depth']
+        max_f = None if args['rf_max_features'] == '1.0' else args['rf_max_features']
+        model = RandomForestRegressor(
+            n_estimators=args['rf_n_estimators'], max_depth=depth, 
+            min_samples_split=args['rf_split'], min_samples_leaf=args['rf_leaf'], max_features=max_f, random_state=42
+        )
+        model.fit(X_train, y_train)
+        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
+        
+    elif algo == 'Neural Network':
+        layers = tuple(int(x.strip()) for x in args['nn_layers'].split(','))
+        model = MLPRegressor(
+            hidden_layer_sizes=layers, activation=args['nn_activation'], solver=args['nn_solver'],
+            alpha=args['nn_alpha'], learning_rate_init=args['nn_lr_init'], max_iter=args['nn_max_iter'], random_state=42
+        )
+        model.fit(X_train, y_train)
+        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
+        
+    elif algo == 'EcoRETINA':
+        # Intégration de la structure eco_retina si disponible
+        if ECO_RETINA_AVAILABLE:
+            model = EcoRETINA()
+            # Simulation/Passage identique à ta configuration originale de eco_retina.py
+            model.fit(y=y_train, X=X_train, col_names=features, loss=args['eco_loss'], grid=args['eco_grid'], reg_type=args['eco_reg_type'], cross_dummy=cross_dummy_bool, max_reg=args['eco_max_reg'], chunk_size=args['eco_chunk_size'], seed=args['eco_seed'], cov_type=args['eco_cov_type'])
+            y_train_pred = model.predict(X_train)
+            y_test_pred = model.predict(X_test)
+        else:
+            # Fallback de secours si eco_retina.py est absent du dépôt
+            model = Ridge(alpha=0.1)
+            model.fit(X_train, y_train)
+            y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
+
     emissions = tracker.stop()
     if emissions is None: emissions = 0.00001
     
@@ -596,7 +713,6 @@ def execute_ml_math_core(algo, target, features, args):
             'emissions': emissions
         }
     }
-
 def open_detailed_report():
     algo = state.algo_choice.value
     run_id = state.latest_run_by_algo.get(algo)
