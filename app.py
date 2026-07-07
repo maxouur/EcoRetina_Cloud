@@ -19,11 +19,6 @@ from codecarbon import EmissionsTracker
 
 # --- ALGORITHMES ET IMPORTS MACHINE LEARNING ---
 import xgboost as xgb
-from google import genai
-from google.genai import types
-import openai
-import anthropic
-from groq import Groq
 import requests
 
 from sklearn.model_selection import train_test_split, KFold
@@ -94,9 +89,16 @@ class EcoRetinaChatAgent:
             "Output strictly plain text. Use ALL CAPS for emphasis."
         )
         self.history = []
-        if provider == "Google Gemini": self.client = genai.Client(api_key=api_key)
-        elif provider == "OpenAI (ChatGPT)": self.client = openai.OpenAI(api_key=api_key)
-        elif provider == "Groq": self.client = Groq(api_key=api_key)
+
+        if provider == "Google Gemini":
+            from google import genai
+            self.client = genai.Client(api_key=api_key)
+        elif provider == "OpenAI (ChatGPT)":
+            import openai
+            self.client = openai.OpenAI(api_key=api_key)
+        elif provider == "Groq":
+            from groq import Groq
+            self.client = Groq(api_key=api_key)
 
     async def ask(self, text: str, bubble_ui):
         try:
