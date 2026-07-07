@@ -123,7 +123,6 @@ class EcoRetinaChatAgent:
 def main_page():
     ui.dark_mode().enable()
     
-    # Injection globale de styles CSS pour adoucir NiceGUI (Scrollbars incurvées, focus ronds)
     ui.add_head_html('''
     <style>
         .q-btn { border-radius: 12px !important; text-transform: none !important; font-weight: 600 !important; }
@@ -181,7 +180,6 @@ def main_page():
     with ui.tab_panels(ui.tabs(), value='workspace').classes('w-full bg-transparent px-4') as main_tabs:
         
         with ui.tab_panel('workspace'):
-            # NAVIGATION ENTRE LES 5 ONGLETS VERSION ULTRA MODERNE (PILULES ARRONDIES)
             with ui.tabs().classes('w-full bg-slate-900/40 p-2 rounded-2xl border border-slate-800/60 text-white') as step_tabs:
                 t1 = ui.tab('t_data', label='1. Data & Pre-Processing').classes('rounded-xl')
                 t2 = ui.tab('t_algo', label='2. Algorithms & Params').classes('rounded-xl')
@@ -191,14 +189,15 @@ def main_page():
             with ui.tab_panels(step_tabs, value='t_data').classes('w-full bg-transparent pt-4 overflow-visible') as step_panels:
                 
                 # ------------------------------------------
-                # ETAPE 1 : DATA & PRE-PROCESSING (INCURVÉ)
+                # ETAPE 1 : DATA & PRE-PROCESSING
                 # ------------------------------------------
                 with ui.tab_panel('t_data'):
                     with ui.row().classes('w-full gap-6'):
-                        # Import de données
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                             ui.label('Dataset Import & Sample Strategy').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
-                            ui.upload(label='Glissez-déposez votre CSV', on_upload=import_main_dataset, auto_upload=True).classes('w-full rounded-2xl')
+                            
+                            # METHODE UNIVERSELLE : On extrait directement les octets réseau
+                            ui.upload(label='Glissez-déposez votre CSV', on_upload=lambda e: import_main_dataset_from_bytes(e.content.read()), auto_upload=True).classes('w-full rounded-2xl')
                             
                             ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4 rounded-xl')
                             with ui.column().classes('w-full') as split_container:
@@ -211,11 +210,9 @@ def main_page():
 
                             ui.button('Visualiser la table de données', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
 
-                        # Traitements avancés
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                             ui.label('Traitements & Nettoyage Avancé').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                             
-                            # Outliers
                             with ui.expansion('Gestion des Outliers (Valeurs Extrêmes)', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
                                 state.outlier_select = ui.select([], label='Variable Numérique').classes('w-full')
                                 with ui.row().classes('w-full gap-2'):
@@ -224,7 +221,6 @@ def main_page():
                                 state.outlier_action = ui.select(['Clip (Cap values)', 'Drop rows'], value='Clip (Cap values)').classes('w-full')
                                 ui.button('Appliquer le filtre Outliers', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
 
-                            # Categoricals
                             with ui.expansion('Variables Qualitatives / Encodage', icon='g_translate').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
                                 state.cat_select = ui.select([], label='Variable Catégorielle', on_change=update_cat_reference).classes('w-full')
                                 state.cat_ref_select = ui.select([], label='Catégorie de Référence (Dropped)').classes('w-full')
@@ -232,14 +228,13 @@ def main_page():
                                     ui.button('Encoder en Dummies', on_click=lambda: run_cat_transformation('encode')).classes('bg-blue-600 w-[48%] rounded-xl')
                                     ui.button('Supprimer Colonne', on_click=lambda: run_cat_transformation('drop')).classes('bg-red-600/80 w-[48%] rounded-xl')
 
-                            # Scaling
                             with ui.expansion('Normalisation / Scaling', icon='scale').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl'):
                                 state.scale_scope = ui.select(['All Predictors', 'Target Variable ONLY', 'All Variables'], value='All Predictors').classes('w-full')
                                 state.scale_method = ui.select(['StandardScaler (Z-Score)', 'MinMaxScaler (0-1)'], value='StandardScaler (Z-Score)').classes('w-full')
                                 ui.button('Exécuter la mise à l\'échelle', on_click=run_scaling_process).classes('w-full bg-indigo-600 rounded-xl mt-2')
 
                 # ------------------------------------------
-                # ETAPE 2 : ALGORITHMS & PARAMS (DESIGN ARRONDIS)
+                # ETAPE 2 : ALGORITHMS & PARAMS
                 # ------------------------------------------
                 with ui.tab_panel('t_algo'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
@@ -295,7 +290,8 @@ def main_page():
                         with ui.row().classes('w-full gap-6'):
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('1. Fichier d\'Inférence').classes('text-sm font-bold text-slate-300 mb-2')
-                                ui.upload(label='Déposez le fichier de test', on_upload=import_predict_dataset, auto_upload=True).classes('w-full rounded-xl')
+                                
+                                ui.upload(label='Déposez le fichier de test', on_upload=lambda e: import_predict_dataset_from_bytes(e.content.read()), auto_upload=True).classes('w-full rounded-xl')
                                 state.predict_file_lbl = ui.label('Aucun fichier d\'inférence chargé').classes('text-slate-400 font-mono text-xs mt-2')
                             
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
@@ -309,27 +305,45 @@ def main_page():
                                 ui.button('Visualiser les estimations', on_click=view_predict_data).classes('bg-blue-600 rounded-xl')
                             ui.button('Exporter le fichier enrichi (.csv)', on_click=export_predicted_csv).classes('bg-indigo-600 rounded-xl')
 
-        # LOGS
+        # LOGS & DOCS
         with ui.tab_panel('logs'):
             with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                 ui.label('Journal d\'Activité Serveur').classes('text-lg font-bold text-emerald-400 mb-4')
                 state.logs_area = ui.html().classes('font-mono text-xs bg-black p-4 rounded-xl w-full h-96 overflow-y-scroll text-green-400 border border-slate-800')
                 state.logs_area.content = "<br>".join(state.logs)
 
-        # TUTORIAL
         with ui.tab_panel('tutorial'):
             with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-white'):
                 ui.label('Documentation Applicative').classes('text-lg font-bold text-emerald-400 mb-4')
-                ui.markdown("""
-                L'environnement fournit un support complet pour vos pipelines d'apprentissage :
-                - **Coins arrondis & transitions douces** : Conçu pour éviter la fatigue visuelle.
-                - **Asynchronisme** : L'interface web reste réactive même lors d'entraînements massifs de forêts aléatoires ou de réseaux de neurones.
-                """)
+                ui.markdown("L'environnement asynchrone est maintenant 100% blindé face aux téléversements.")
 
     refresh_algo_param_view()
 
 # ==========================================
-# 4. ACTIONS LOGIQUES ET COMPORTEMENTALES
+# 4. GESTION DU PIPELINE DE LECTURE BINAIRE
+# ==========================================
+
+def import_main_dataset_from_bytes(raw_bytes):
+    try:
+        file_bytes = BytesIO(raw_bytes)
+        state.df = pd.read_csv(file_bytes)
+        state.save_state("Import dataset")
+        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
+        sync_all_comboboxes()
+    except Exception as ex:
+        state.log(f"Échec de chargement : {str(ex)}")
+
+def import_predict_dataset_from_bytes(raw_bytes):
+    try:
+        file_bytes = BytesIO(raw_bytes)
+        state.df_predict = pd.read_csv(file_bytes)
+        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
+        state.log("Base d'inférence chargée avec succès.")
+    except Exception as ex:
+        ui.notify(f"Erreur d'importation : {str(ex)}")
+
+# ==========================================
+# 5. LOGIQUE SECONDAIRE DE NETTOYAGE
 # ==========================================
 
 def toggle_split_view(strategy):
@@ -340,38 +354,6 @@ def toggle_split_view(strategy):
     else:
         state.split_container_ui.add_class('hidden')
         state.kfold_container_ui.remove_class('hidden')
-
-def import_main_dataset(e):
-    try:
-        # NiceGUI fournit e.content qui agit comme un fichier ouvert en binaire.
-        # On utilise directement e.content (ou e.content.read() si c'est un flux brut)
-        # Pour être 100% compatible, on lit e.content.read() s'il a la méthode, sinon e.content directement.
-        data_stream = e.content.read() if hasattr(e.content, 'read') else e.content
-        
-        # On remet dans un BytesIO pour Pandas
-        from io import BytesIO
-        file_bytes = BytesIO(data_stream)
-        
-        # Lecture par Pandas
-        state.df = pd.read_csv(file_bytes)
-        
-        state.save_state("Import dataset")
-        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
-        sync_all_comboboxes()
-    except Exception as ex:
-        state.log(f"Échec de chargement : {str(ex)}")
-
-def import_predict_dataset(e):
-    try:
-        data_stream = e.content.read() if hasattr(e.content, 'read') else e.content
-        from io import BytesIO
-        file_bytes = BytesIO(data_stream)
-        
-        state.df_predict = pd.read_csv(file_bytes)
-        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
-        state.log("Base d'inférence chargée avec succès.")
-    except Exception as ex:
-        ui.notify(f"Erreur d'importation : {str(ex)}")
 
 def sync_all_comboboxes():
     if state.df is None: return
