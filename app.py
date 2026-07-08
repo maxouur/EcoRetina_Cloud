@@ -216,7 +216,8 @@ def main_page():
                             ui.label('Traitements & Nettoyage Avancé').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                             
                             with ui.expansion('Outliers management', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
-                                state.outlier_select = ui.select([], label='Select Numerical variable', on_change=on_outlier_variable_select).classes('w-full')
+                                state.outlier_select = ui.select([], label='Select Numeric variable', on_change=on_outlier_variable_select).classes('w-full')
+                                state.outlier_stats_area = ui.html('<div class="text-slate-400 font-mono text-xs p-2 bg-slate-950 rounded-xl border border-slate-800/50">Select a variable to view descriptive statistics...</div>').classes('w-full my-2')
                                 with ui.row().classes('w-full gap-2'):
                                     state.outlier_min = ui.number(label='Lower Bound').classes('w-[47%]')
                                     state.outlier_max = ui.number(label='Upper Bound').classes('w-[47%]')
@@ -249,8 +250,7 @@ def main_page():
                         state.param_options_frame = ui.row().classes('w-full bg-slate-950/50 p-4 rounded-xl border border-slate-800 mt-4')
                         
                         ui.label('Sélection des Predictors (X)').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
-                        state.features_checkbox_container = ui.row().classes('w-full bg-slate-950/80 p-4 rounded-2xl max-h-60 overflow-y-scroll border border-slate-800')
-                        
+                        state.features_select_ui = ui.select(options=[], multiple=True, label="Hold Ctrl/Cmd to select multiple variables").props('use-chips chips-color=emerald bg-color=slate-950 filled text-color=white').classes('w-full h-48 rounded-2xl border border-slate-800')
                         with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
                             state.algo_status_lbl = ui.label('Pipeline prêt. Conduisez l\'analyse.').classes('text-slate-400 font-mono text-sm')
                             with ui.row().classes('gap-3'):
@@ -405,16 +405,16 @@ def sync_all_comboboxes():
     if cat_cols: state.cat_select.value = cat_cols[0]
     state.cat_select.update()
     
+    # Dans sync_all_comboboxes() :
     state.main_target_select.options = cols
     if cols: state.main_target_select.value = cols[0]
     state.main_target_select.update()
     
-    # Reconstruction physique des cases à cocher dans le HTML
-    state.features_checkbox_container.clear()
-    with state.features_checkbox_container:
-        for c in cols:
-            ui.checkbox(text=c, value=True).classes('text-slate-200 mx-2 font-mono text-sm')
-    state.features_checkbox_container.update()
+    # 🔄 Nouvelle logique pour remplir notre liste défilante multiple
+    state.features_select_ui.options = cols
+    # Par défaut, on peut pré-sélectionner toutes les colonnes sauf la cible (Y)
+    state.features_select_ui.value = [c for c in cols if c != state.main_target_select.value]
+    state.features_select_ui.update()
 
 def update_cat_reference(e):
     if state.df is None or not e.value: return
@@ -428,47 +428,58 @@ def on_outlier_variable_select(e):
         
     col = e.value
     try:
+        # Compute Pandas summary metrics
         stats_desc = state.df[col].describe()
         
-        state.outlier_min.placeholder = f"Min: {stats_desc.get('min', 0):.2f} | Mean: {stats_desc.get('mean', 0):.2f}"
-        state.outlier_max.placeholder = f"Max: {stats_desc.get('max', 0):.2f} | Q3: {stats_desc.get('75%', 0):.2f}"
+        # Build the structured summary report inside a custom Monospace template
+        stats_html = (
+            f"<div class='font-mono text-xs text-emerald-400 bg-black/40 p-3 rounded-xl border border-slate-800/80 leading-relaxed'>"
+            f"<b>📊 DESCRIPTIVE STATISTICS FOR '{col.upper()}'</b><br>"
+            f"--------------------------------------------------<br>"
+            f"  Count    : {int(stats_desc.get('count', 0)):<12} |   Min      : {stats_desc.get('min', 0):.4f}<br>"
+            f"  Mean     : {stats_desc.get('mean', 0):.4f:<12} |   25% (Q1) : {stats_desc.get('25%', 0):.4f}<br>"
+            f"  Std Dev  : {stats_desc.get('std', 0):.4f:<12} |   50% (Med): {stats_desc.get('50%', 0):.4f}<br>"
+            f"  Variance : {state.df[col].var():.4f:<12} |   75% (Q3) : {stats_desc.get('75%', 0):.4f}<br>"
+            f"  Skewness : {state.df[col].skew():.4f:<12} |   Max      : {stats_desc.get('max', 0):.4f}"
+            f"</div>"
+        )
         
+        # Render the updated component directly within the UI
+        state.outlier_stats_area.content = stats_html
+        state.outlier_stats_area.update()
+        
+        # Set dynamic inputs helper placeholders
+        state.outlier_min.placeholder = f"Min: {stats_desc.get('min', 0):.2f}"
+        state.outlier_max.placeholder = f"Max: {stats_desc.get('max', 0):.2f}"
         state.outlier_min.update()
         state.outlier_max.update()
         
-        ui.notify(
-            f"Stats loaded for '{col}': Mean={stats_desc.get('mean', 0):.2f}, "
-            f"StdDev={stats_desc.get('std', 0):.2f}, Q50(Med)={stats_desc.get('50%', 0):.2f}",
-            type='info'
-        )
     except Exception as ex:
-        print(f"Error computing variable stats: {str(ex)}")
+        state.outlier_stats_area.content = f"<div class='text-red-400 font-mono text-xs'>Error computing statistics: {str(ex)}</div>"
+        state.outlier_stats_area.update()
 
 def process_outliers():
     if state.df is None or not state.outlier_select.value: 
         return
         
     col = state.outlier_select.value
-    
-    # Retrieve raw inputs from the NiceGUI UI components
     raw_min = state.outlier_min.value
     raw_max = state.outlier_max.value
     
-    # Safety check: if both fields are blank, notify the user and stop
     if raw_min is None and raw_max is None: 
         return ui.notify("Please specify at least a Lower or an Upper boundary!", type='warning')
     
     state.save_state(f"Outliers on {col}")
     action_type = state.outlier_action.value
     
-    # --- MODE 1: CLIP VALUES (CAP AT BOUNDARIES) ---
+    # --- CASE 1: CLIP VALUES ---
     if 'Clip' in action_type:
         mn = float(raw_min) if raw_min is not None else float(state.df[col].min())
         mx = float(raw_max) if raw_max is not None else float(state.df[col].max())
         state.df[col] = state.df[col].clip(lower=mn, upper=mx)
         state.log(f"Outlier filter (Clip) applied on '{col}' [{mn}, {mx}].")
         
-    # --- MODE 2: DROP ROWS OUTSIDE BOUNDARIES ---
+    # --- CASE 2: DROP ROWS ---
     else:
         initial_len = len(state.df)
         if raw_min is not None:
@@ -608,12 +619,12 @@ async def trigger_pipeline_execution():
     target = state.main_target_select.value
     algo = state.algo_choice.value
     
-    selected_features = []
-    for child in state.features_checkbox_container:
-        if isinstance(child, ui.checkbox) and child.value and child.text != target:
-            selected_features.append(child.text)
+    # 🔄 Lecture directe des variables sélectionnées dans la liste déroulante
+    chosen_vars = state.features_select_ui.value if state.features_select_ui.value else []
+    selected_features = [v for v in chosen_vars if v != target]
             
-    if not selected_features: return ui.notify("Cochez au moins une variable explicative !")
+    if not selected_features: 
+        return ui.notify("Sélectionnez au moins une variable explicative dans la liste !", type='warning')
 
     state.algo_status_lbl.text = "Exécution mathématique de la régression en tâche de fond..."
     state.algo_status_lbl.update()
