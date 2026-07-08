@@ -751,83 +751,105 @@ def refresh_algo_param_view():
             
     state.param_options_frame.update() # <--- Force NiceGUI à redessiner l'interface web instantanément
 async def trigger_pipeline_execution():
-    if state.df is None: return ui.notify("Aucune base exploitable !")
-    target = state.main_target_select.value
-    algo = state.algo_choice.value
-    
-    # 🔄 Extraction des deux listes distinctes
-    chosen_cont = state.cont_features_select.value if state.cont_features_select.value else []
-    chosen_dummy = state.dummy_features_select.value if state.dummy_features_select.value else []
-    
-    # Nettoyage pour s'assurer que la variable cible (Y) n'est pas incluse par erreur
-    cont_features = [v for v in chosen_cont if v != target]
-    dummy_features = [v for v in chosen_dummy if v != target]
-    
-    # Sécurité globale : il faut au moins un predictor, quel que soit son type
-    if not cont_features and not dummy_features: 
-        return ui.notify("Please select at least one feature (Continuous or Dummy)!", type='warning')
+    try:
+        if state.df is None: 
+            return ui.notify("No active dataset loaded!", type='warning')
+            
+        target = state.main_target_select.value
+        algo = state.algo_choice.value
+        
+        # Read from our two new selective dropdown structures
+        chosen_cont = state.cont_features_select.value if state.cont_features_select.value else []
+        chosen_dummy = state.dummy_features_select.value if state.dummy_features_select.value else []
+        
+        # Ensure target variable is not included by accident
+        cont_features = [v for v in chosen_cont if v != target]
+        dummy_features = [v for v in chosen_dummy if v != target]
+        
+        # Verify that the user selected at least one feature across either category
+        if not cont_features and not dummy_features: 
+            return ui.notify("Please select at least one explanatory feature (Continuous or Dummy)!", type='warning')
 
-    state.algo_status_lbl.text = "Running pipeline calculations..."
-    state.algo_status_lbl.update()
+        # Update the UI state indicators
+        state.algo_status_lbl.text = "Running pipeline calculations..."
+        state.btn_run.disable()
+        state.btn_stop.enable()
+        state.algo_status_lbl.update()
     
-  # --- SÉCURISATION DES ARGUMENTS (Extraction stricte des valeurs primitives avant le thread) ---
-    config_args = {
-        'eco_loss': str(getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value),
-        'eco_reg_type': str(getattr(state, 'eco_reg_type', type('obj', (), {'value': "linear"})).value),
-        'eco_cross_dummy': str(getattr(state, 'eco_cross_dummy', type('obj', (), {'value': "False"})).value),
-        'eco_cov_type': str(getattr(state, 'eco_cov_type', type('obj', (), {'value': "nonrobust"})).value),
-        'eco_grid': float(getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value),
-        'eco_max_reg': int(getattr(state, 'eco_max_reg', type('obj', (), {'value': 100})).value),
-        'eco_chunk_size': int(getattr(state, 'eco_chunk_size', type('obj', (), {'value': 500})).value),
-        'eco_seed': int(getattr(state, 'eco_seed', type('obj', (), {'value': 8})).value),
-        
-        'fit_intercept': str(getattr(state, 'ols_fit_intercept', getattr(state, 'fit_intercept_input', type('obj', (), {'value': 'True'}))).value),
-        'alpha': float(getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value),
-        'max_iter': int(getattr(state, 'max_iter_input', getattr(state, 'nn_max_iter', type('obj', (), {'value': 1000}))).value),
-        'tol': float(getattr(state, 'tol_input', type('obj', (), {'value': 0.0001})).value),
-        'ridge_solver': str(getattr(state, 'ridge_solver', type('obj', (), {'value': 'auto'})).value),
-        'en_l1_ratio': float(getattr(state, 'en_l1_ratio', type('obj', (), {'value': 0.5})).value),
-        
-        'xgb_n': int(getattr(state, 'xgb_n', type('obj', (), {'value': 100})).value),
-        'xgb_depth': int(getattr(state, 'xgb_depth', type('obj', (), {'value': 6})).value),
-        'xgb_lr': float(getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value),
-        'xgb_subsample': float(getattr(state, 'xgb_subsample', type('obj', (), {'value': 1.0})).value),
-        'xgb_colsample': float(getattr(state, 'xgb_colsample', type('obj', (), {'value': 1.0})).value),
-        'xxx_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value),
-        'xgb_alpha': float(getattr(state, 'xgb_alpha', type('obj', (), {'value': 0.0})).value),
-        'xgb_lambda': float(getattr(state, 'xgb_lambda', type('obj', (), {'value': 1.0})).value),
-        
-        'rf_n_estimators': int(getattr(state, 'rf_n_estimators', type('obj', (), {'value': 100})).value),
-        'rf_max_depth': int(getattr(state, 'rf_max_depth', type('obj', (), {'value': 0})).value),
-        'rf_split': int(getattr(state, 'rf_min_split', type('obj', (), {'value': 2})).value),
-        'rf_leaf': int(getattr(state, 'rf_min_leaf', type('obj', (), {'value': 1})).value),
-        'rf_max_features': str(getattr(state, 'rf_max_features', type('obj', (), {'value': '1.0'})).value),
-        
-        'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': "100,50"})).value),
-        'nn_activation': str(getattr(state, 'nn_activation', type('obj', (), {'value': "relu"})).value),
-        'nn_solver': str(getattr(state, 'nn_solver', type('obj', (), {'value': "adam"})).value),
-        'nn_alpha': float(getattr(state, 'nn_alpha', type('obj', (), {'value': 0.0001})).value),
-        'nn_lr_init': float(getattr(state, 'nn_lr_init', type('obj', (), {'value': 0.001})).value),
-        'nn_max_iter': int(getattr(state, 'nn_max_iter', type('obj', (), {'value': 200})).value),
-    }
+        # --- THREAD-SAFE PARAMETER EXTRACTION ---
+        config_args = {
+            "algo": algo,
+            "target_col": target,
+            "cont_names": cont_features,
+            "dummy_names": dummy_features,
+            'eco_loss': str(getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value),
+            'eco_reg_type': str(getattr(state, 'eco_reg_type', type('obj', (), {'value': "linear"})).value),
+            'eco_cross_dummy': str(getattr(state, 'eco_cross_dummy', type('obj', (), {'value': "False"})).value),
+            'eco_cov_type': str(getattr(state, 'eco_cov_type', type('obj', (), {'value': "nonrobust"})).value),
+            'eco_grid': float(getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value),
+            'eco_max_reg': int(getattr(state, 'eco_max_reg', type('obj', (), {'value': 100})).value),
+            'eco_chunk_size': int(getattr(state, 'eco_chunk_size', type('obj', (), {'value': 500})).value),
+            'eco_seed': int(getattr(state, 'eco_seed', type('obj', (), {'value': 8})).value),
+            
+            'fit_intercept': str(getattr(state, 'ols_fit_intercept', getattr(state, 'fit_intercept_input', type('obj', (), {'value': 'True'}))).value),
+            'alpha': float(getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value),
+            'max_iter': int(getattr(state, 'max_iter_input', getattr(state, 'nn_max_iter', type('obj', (), {'value': 1000}))).value),
+            'tol': float(getattr(state, 'tol_input', type('obj', (), {'value': 0.0001})).value),
+            'ridge_solver': str(getattr(state, 'ridge_solver', type('obj', (), {'value': 'auto'})).value),
+            'en_l1_ratio': float(getattr(state, 'en_l1_ratio', type('obj', (), {'value': 0.5})).value),
+            
+            'xgb_n': int(getattr(state, 'xgb_n', type('obj', (), {'value': 100})).value),
+            'xgb_depth': int(getattr(state, 'xgb_depth', type('obj', (), {'value': 6})).value),
+            'xgb_lr': float(getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value),
+            'xgb_subsample': float(getattr(state, 'xgb_subsample', type('obj', (), {'value': 1.0})).value),
+            'xgb_colsample': float(getattr(state, 'xgb_colsample', type('obj', (), {'value': 1.0})).value),
+            'xxx_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value),
+            'xgb_alpha': float(getattr(state, 'xgb_alpha', type('obj', (), {'value': 0.0})).value),
+            'xgb_lambda': float(getattr(state, 'xgb_lambda', type('obj', (), {'value': 1.0})).value),
+            
+            'rf_n_estimators': int(getattr(state, 'rf_n_estimators', type('obj', (), {'value': 100})).value),
+            'rf_max_depth': int(getattr(state, 'rf_max_depth', type('obj', (), {'value': 0})).value),
+            'rf_split': int(getattr(state, 'rf_min_split', type('obj', (), {'value': 2})).value),
+            'rf_leaf': int(getattr(state, 'rf_min_leaf', type('obj', (), {'value': 1})).value),
+            'rf_max_features': str(getattr(state, 'rf_max_features', type('obj', (), {'value': '1.0'})).value),
+            
+            'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': "100,50"})).value),
+            'nn_activation': str(getattr(state, 'nn_activation', type('obj', (), {'value': "relu"})).value),
+            'nn_solver': str(getattr(state, 'nn_solver', type('obj', (), {'value': "adam"})).value),
+            'nn_alpha': float(getattr(state, 'nn_alpha', type('obj', (), {'value': 0.0001})).value),
+            'nn_lr_init': float(getattr(state, 'nn_lr_init', type('obj', (), {'value': 0.001})).value),
+            'nn_max_iter': int(getattr(state, 'nn_max_iter', type('obj', (), {'value': 200})).value),
+        }
 
-    # EXÉCUTION DÉTACHÉE POUR NE PAS CONGELER LES WEBSOCKETS DU NAVIGATEUR
-    loop = asyncio.get_event_loop()
-    res = await loop.run_in_executor(None, execute_ml_math_core, algo, target, selected_features, config_args)
+        # 🔄 FIX 1: Combine both lists into a single flat list for standard sklearn / xgboost algos
+        flat_selected_features = cont_features + dummy_features
+
+        # 🔄 FIX 2: Wrapped inside the try block to avoid silent background engine hangs
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, execute_ml_math_core, algo, target, flat_selected_features, config_args)
+        
+        run_id = f"Run_{time.strftime('%H%M%S')}"
+        state.run_history[run_id] = res
+        state.latest_run_by_algo[algo] = run_id
+        
+        state.compare_table_ui.add_rows([{
+            'run': run_id, 'algo': algo,
+            'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
+            'r2_te': f"{res['metrics']['r2_te']:.4f}", 'rmse_te': f"{res['metrics']['rmse_te']:.4f}",
+            'mape_te': f"{res['metrics']['mape_te']:.2f}%", 'co2': f"{res['metrics']['emissions']:.5f}"
+        }])
+        
+        state.algo_status_lbl.text = f"Model saved: {run_id}"
+        state.log(f"Pipeline completed successfully for {algo}.")
+        
+    except Exception as ex:
+        ui.notify(f"Pipeline initiation failed: {str(ex)}", type='negative')
+        print(f"[CRITICAL ERROR] trigger_pipeline_execution crashed: {str(ex)}")
+    finally:
+        # Re-enable button elements safely when done
+        state.btn_run.enable()
+        state.btn_stop.disable()
     
-    run_id = f"Run_{time.strftime('%H%M%S')}"
-    state.run_history[run_id] = res
-    state.latest_run_by_algo[algo] = run_id
-    
-    state.compare_table_ui.add_rows([{
-        'run': run_id, 'algo': algo,
-        'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
-        'r2_te': f"{res['metrics']['r2_te']:.4f}", 'rmse_te': f"{res['metrics']['rmse_te']:.4f}",
-        'mape_te': f"{res['metrics']['mape_te']:.2f}%", 'co2': f"{res['metrics']['emissions']:.5f}"
-    }])
-    
-    state.algo_status_lbl.text = f"Modèle sauvegardé : {run_id}"
-    state.log(f"Pipeline complété avec succès pour {algo}.")
 
 def execute_ml_math_core(algo, target, features, args):
     df_clean = state.df.dropna(subset=[target] + features).fillna(0)
