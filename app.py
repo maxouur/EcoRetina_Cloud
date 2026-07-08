@@ -700,56 +700,51 @@ def apply_redo():
 def refresh_algo_param_view():
     algo = state.algo_choice.value
     state.param_options_frame.clear()
+    
     with state.param_options_frame:
+        # --- 1. HYPERPARAMETERS FOR ECORETINA ---
         if algo == 'EcoRETINA':
-            state.eco_loss = ui.select(['mse', 'mae', 'MAPE', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-32 rounded-xl')
-            state.eco_reg_type = ui.select(['linear', 'logit', 'probit'], value='linear', label='Reg Type').classes('w-32 rounded-xl')
+            state.eco_loss = ui.select(['mse', 'mae', 'MAPE', 'AIC', 'BIC'], value='mse', label='Loss Function').classes('w-32 rounded-xl')
+            state.eco_reg_type = ui.select(['linear', 'logit', 'probit'], value='linear', label='Regression Type').classes('w-32 rounded-xl')
             state.eco_cross_dummy = ui.select(['False', 'True'], value='False', label='Cross Dummy').classes('w-32 rounded-xl')
-            state.eco_cov_type = ui.select(['nonrobust', 'HC0', 'HC1', 'HC2', 'HC3'], value='nonrobust', label='Cov Type').classes('w-32 rounded-xl')
+            state.eco_cov_type = ui.select(['nonrobust', 'HC0', 'HC1', 'HC2', 'HC3'], value='nonrobust', label='Covariance Type').classes('w-32 rounded-xl')
             state.eco_grid = ui.number(label='Grid Step', value=0.005, format='%.4f').classes('w-28 rounded-xl')
             state.eco_max_reg = ui.number(label='Max Reg', value=100).classes('w-24 rounded-xl')
             state.eco_chunk_size = ui.number(label='Chunk Size', value=500).classes('w-24 rounded-xl')
             state.eco_seed = ui.number(label='Seed', value=8).classes('w-20 rounded-xl')
             
-        elif algo == 'OLS':
-            state.ols_fit_intercept = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-40 rounded-xl')
-            
-        elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
-            state.alpha_input = ui.number(label='Alpha (Penalty)', value=0.01, format='%.4f').classes('w-40 rounded-xl')
-            state.fit_intercept_input = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-40 rounded-xl')
-            state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-40 rounded-xl')
-            state.tol_input = ui.number(label='Tolerance', value=0.0001, format='%.4f').classes('w-40 rounded-xl')
+        # --- 2. HYPERPARAMETERS FOR STANDARD LINEAR MODELS ---
+        elif algo in ['OLS', 'Lasso', 'Ridge', 'ElasticNet']:
+            state.ols_fit_intercept = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-32 rounded-xl')
+            if algo != 'OLS':
+                state.alpha_input = ui.number(label='Alpha (Penalty)', value=0.01, format='%.4f').classes('w-28 rounded-xl')
+            if algo in ['Lasso', 'ElasticNet', 'Ridge']:
+                state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-28 rounded-xl')
+                state.tol_input = ui.number(label='Tolerance', value=0.0001, format='%.5f').classes('w-28 rounded-xl')
             if algo == 'Ridge':
-                state.ridge_solver = ui.select(['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg', 'sag', 'saga'], value='auto', label='Solver').classes('w-40 rounded-xl')
+                state.ridge_solver = ui.select(['auto', 'svd', 'cholesky', 'lsqr', 'sag'], value='auto', label='Solver').classes('w-32 rounded-xl')
             if algo == 'ElasticNet':
-                state.en_l1_ratio = ui.number(label='L1 Ratio', value=0.5, format='%.2f').classes('w-40 rounded-xl')
-                
+                state.en_l1_ratio = ui.number(label='L1 Ratio', value=0.5, format='%.2f').classes('w-24 rounded-xl')
+
+        # --- 3. HYPERPARAMETERS FOR XGBOOST ---
         elif algo == 'XGBoost':
-            state.xgb_n = ui.number(label='N Estimators', value=100).classes('w-40 rounded-xl')
-            state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-40 rounded-xl')
-            state.xgb_lr = ui.number(label='Learning Rate', value=0.1, format='%.3f').classes('w-40 rounded-xl')
-            state.xgb_subsample = ui.number(label='Subsample', value=1.0, format='%.2f').classes('w-40 rounded-xl')
-            state.xgb_colsample = ui.number(label='Colsample By Tree', value=1.0, format='%.2f').classes('w-40 rounded-xl')
-            state.xgb_gamma = ui.number(label='Gamma', value=0.0).classes('w-40 rounded-xl')
-            state.xgb_alpha = ui.number(label='Reg Alpha (L1)', value=0.0).classes('w-40 rounded-xl')
-            state.xgb_lambda = ui.number(label='Reg Lambda (L2)', value=1.0).classes('w-40 rounded-xl')
-            
+            state.xgb_n = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
+            state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-24 rounded-xl')
+            state.xgb_lr = ui.number(label='Learning Rate', value=0.1, format='%.2f').classes('w-24 rounded-xl')
+            state.xgb_subsample = ui.number(label='Subsample', value=1.0, format='%.2f').classes('w-24 rounded-xl')
+
+        # --- 4. HYPERPARAMETERS FOR RANDOM FOREST ---
         elif algo == 'Random Forest':
-            state.rf_n_estimators = ui.number(label='N Estimators', value=100).classes('w-40 rounded-xl')
-            state.rf_max_depth = ui.number(label='Max Depth (0=Unl.)', value=0).classes('w-40 rounded-xl')
-            state.rf_min_split = ui.number(label='Min Samples Split', value=2).classes('w-40 rounded-xl')
-            state.rf_min_leaf = ui.number(label='Min Samples Leaf', value=1).classes('w-40 rounded-xl')
-            state.rf_max_features = ui.select(['1.0', 'sqrt', 'log2'], value='1.0', label='Max Features').classes('w-40 rounded-xl')
-            
+            state.rf_n_estimators = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
+            state.rf_max_depth = ui.number(label='Max Depth (0=None)', value=0).classes('w-28 rounded-xl')
+            state.rf_min_split = ui.number(label='Min Split', value=2).classes('w-24 rounded-xl')
+
+        # --- 5. HYPERPARAMETERS FOR NEURAL NETWORK ---
         elif algo == 'Neural Network':
-            state.nn_layers = ui.input(label='Hidden Layers', value="100,50").classes('w-40 rounded-xl')
-            state.nn_activation = ui.select(['relu', 'tanh', 'logistic', 'identity'], value='relu', label='Activation').classes('w-40 rounded-xl')
-            state.nn_solver = ui.select(['adam', 'sgd', 'lbfgs'], value='adam', label='Solver').classes('w-40 rounded-xl')
-            state.nn_alpha = ui.number(label='Alpha (L2 Penalty)', value=0.0001, format='%.4f').classes('w-40 rounded-xl')
-            state.nn_lr_init = ui.number(label='Learning Rate Init', value=0.001, format='%.3f').classes('w-40 rounded-xl')
-            state.nn_max_iter = ui.number(label='Max Iterations', value=200).classes('w-40 rounded-xl')
-            
-    state.param_options_frame.update() # <--- Force NiceGUI à redessiner l'interface web instantanément
+            state.nn_layers = ui.input(label='Hidden Layers', value='100,50').classes('w-32 rounded-xl')
+            state.nn_activation = ui.select(['relu', 'tanh', 'logistic'], value='relu', label='Activation').classes('w-32 rounded-xl')
+            state.nn_solver = ui.select(['adam', 'sgd'], value='adam', label='Solver').classes('w-32 rounded-xl')
+            state.nn_max_iter = ui.number(label='Max Iterations', value=200).classes('w-28 rounded-xl')
 async def trigger_pipeline_execution():
     try:
         if state.df is None: 
