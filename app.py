@@ -212,7 +212,6 @@ def main_page():
             
         # Bind the enter key press to the input box as well
         state.chat_input.on('keydown.enter', submit_chat)
-        chat_input = ui.input(placeholder='Posez votre question...').classes('w-full mt-4 rounded-xl')
 
         def run_ai_task(msg, ui_element):
             # A wrapper task executor because NiceGUI components need async event loops
@@ -276,27 +275,54 @@ def main_page():
                                 state.scale_method = ui.select(['StandardScaler (Z-Score)', 'MinMaxScaler (0-1)'], value='StandardScaler (Z-Score)').classes('w-full')
                                 ui.button('Apply Scaling', on_click=run_scaling_process).classes('w-full bg-indigo-600 rounded-xl mt-2')
 
-                # ------------------------------------------
-                # ETAPE 2 : ALGORITHMS & PARAMS
+               # ------------------------------------------
+                # STEP 2: ALGORITHMS & PARAMS
                 # ------------------------------------------
                 with ui.tab_panel('t_algo'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                        ui.label('Configuration de l\'Algorithme').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
+                        ui.label('Algorithm Configuration').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                         
                         with ui.row().classes('w-full gap-4 items-center'):
-                            state.algo_choice = ui.select(['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet', 'XGBoost', 'Random Forest', 'Neural Network'], value='EcoRETINA', on_change=refresh_algo_param_view).classes('w-1/3 rounded-xl')
-                            state.main_target_select = ui.select([], label='Target Variable (Y)', on_change=lambda e: state.features_select_ui.set_value([c for c in state.df.columns if c != e.value])).classes('w-1/3 rounded-xl')
+                            state.algo_choice = ui.select(
+                                ['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet', 'XGBoost', 'Random Forest', 'Neural Network'], 
+                                value='EcoRETINA', 
+                                on_change=refresh_algo_param_view
+                            ).classes('w-1/3 rounded-xl')
+                            
+                            # 🔄 FIXED: Target change automatically updates both selection values
+                            state.main_target_select = ui.select(
+                                [], 
+                                label='Target Variable (Y)', 
+                                on_change=lambda e: [
+                                    state.cont_features_select.set_value([c for c in state.cont_features_select.value if c != e.value]),
+                                    state.dummy_features_select.set_value([c for c in state.dummy_features_select.value if c != e.value])
+                                ]
+                            ).classes('w-1/3 rounded-xl')
                         
                         state.param_options_frame = ui.row().classes('w-full bg-slate-950/50 p-4 rounded-xl border border-slate-800 mt-4')
                         
-                        ui.label('Sélection des Predictors (X)').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
-                        state.features_select_ui = ui.select(options=[], multiple=True, label="Hold Ctrl/Cmd to select multiple variables").props('use-chips chips-color=emerald bg-color=slate-950 filled text-color=white').classes('w-full h-48 rounded-2xl border border-slate-800')
-                        with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
-                            state.algo_status_lbl = ui.label('Pipeline prêt. Conduisez l\'analyse.').classes('text-slate-400 font-mono text-sm')
-                            with ui.row().classes('gap-3'):
-                                ui.button('Rapport Graphique Détaillé', on_click=open_detailed_report).classes('bg-blue-600/90 rounded-xl font-bold')
-                                ui.button('► Lancer l\'Apprentissage', on_click=trigger_pipeline_execution).classes('bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl font-bold px-6 shadow-lg shadow-emerald-500/10')
+                        ui.label('Feature Selection (Predictors X)').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
+                        
+                        # Split columns view for clean feature typing
+                        with ui.row().classes('w-full gap-4 mt-2 no-wrap'):
+    
+                            # 📉 LIST 1: CONTINUOUS VARIABLES
+                            with ui.column().classes('w-1/2'):
+                                ui.label('Continuous Features (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
+                                state.cont_features_select = ui.select(
+                                    options=[], 
+                                    multiple=True, 
+                                    label="Select Continuous Variables"
+                                ).props('use-chips chips-color=blue bg-color=slate-950 filled').classes('w-full h-40 rounded-xl border border-slate-800')
 
+                            # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
+                            with ui.column().classes('w-1/2'):
+                                ui.label('Dummy Variables (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
+                                state.dummy_features_select = ui.select(
+                                    options=[], 
+                                    multiple=True, 
+                                    label="Select Dummy/Binary Variables"
+                                ).props('use-chips chips-color=purple bg-color=slate-950 filled').classes('w-full h-40 rounded-xl border border-slate-800')
                 # ------------------------------------------
                 # ETAPE 3 : COMPARE RESULTS
                 # ------------------------------------------
@@ -435,6 +461,7 @@ def sync_all_comboboxes():
     num_cols = [str(c) for c in state.df.select_dtypes(include=[np.number]).columns]
     cat_cols = [str(c) for c in state.df.select_dtypes(include=['object', 'category']).columns]
     
+    # 1. Mise à jour des autres sélecteurs
     state.outlier_select.options = num_cols
     if num_cols: state.outlier_select.value = num_cols[0]
     state.outlier_select.update()
@@ -447,12 +474,22 @@ def sync_all_comboboxes():
     if cols: state.main_target_select.value = cols[0]
     state.main_target_select.update()
     
-    # 🔄 FIX: Assign the list of columns to the new scrolling selector component
-    state.features_select_ui.options = cols
+    # 2. Séparation intelligente automatique pour l'utilisateur
+    target = state.main_target_select.value
     
-    # Pre-select all columns except the target (Y) by default to save time
-    state.features_select_ui.value = [c for c in cols if c != state.main_target_select.value]
-    state.features_select_ui.update()
+    # On trie : si une colonne numérique a moins de 3 valeurs uniques, c'est probablement une dummy (0/1)
+    suggested_cont = [c for c in num_cols if c != target and state.df[c].nunique() > 2]
+    suggested_dummy = [c for c in cols if c != target and (c not in suggested_cont)]
+    
+    # Remplissage de la liste des variables continues
+    state.cont_features_select.options = cols
+    state.cont_features_select.value = suggested_cont
+    state.cont_features_select.update()
+    
+    # Remplissage de la liste des variables dummies
+    state.dummy_features_select.options = cols
+    state.dummy_features_select.value = suggested_dummy
+    state.dummy_features_select.update()
 
 def update_cat_reference(e):
     if state.df is None or not e.value: return
@@ -475,10 +512,10 @@ def on_outlier_variable_select(e):
             f"<b>📊 DESCRIPTIVE STATISTICS FOR '{col.upper()}'</b><br>"
             f"--------------------------------------------------<br>"
             f"  Count    : {int(stats_desc.get('count', 0)):<12} |   Min      : {stats_desc.get('min', 0):.4f}<br>"
-            f"  Mean     : {stats_desc.get('mean', 0):.4f:<12} |   25% (Q1) : {stats_desc.get('25%', 0):.4f}<br>"
-            f"  Std Dev  : {stats_desc.get('std', 0):.4f:<12} |   50% (Med): {stats_desc.get('50%', 0):.4f}<br>"
-            f"  Variance : {state.df[col].var():.4f:<12} |   75% (Q3) : {stats_desc.get('75%', 0):.4f}<br>"
-            f"  Skewness : {state.df[col].skew():.4f:<12} |   Max      : {stats_desc.get('max', 0):.4f}"
+            f"  Mean     : {stats_desc.get('mean', 0):<12.4f} |   25% (Q1) : {stats_desc.get('25%', 0):.4f}<br>"
+            f"  Std Dev  : {stats_desc.get('std', 0):<12.4f} |   50% (Med): {stats_desc.get('50%', 0):.4f}<br>"
+            f"  Variance : {state.df[col].var():<12.4f} |   75% (Q3) : {stats_desc.get('75%', 0):.4f}<br>"
+            f"  Skewness : {state.df[col].skew():<12.4f} |   Max      : {stats_desc.get('max', 0):.4f}"
             f"</div>"
         )
         
@@ -657,14 +694,19 @@ async def trigger_pipeline_execution():
     target = state.main_target_select.value
     algo = state.algo_choice.value
     
-    # 🔄 Lecture directe des variables sélectionnées dans la liste déroulante
-    chosen_vars = state.features_select_ui.value if state.features_select_ui.value else []
-    selected_features = [v for v in chosen_vars if v != target]
-            
-    if not selected_features: 
-        return ui.notify("Sélectionnez au moins une variable explicative dans la liste !", type='warning')
+    # 🔄 Extraction des deux listes distinctes
+    chosen_cont = state.cont_features_select.value if state.cont_features_select.value else []
+    chosen_dummy = state.dummy_features_select.value if state.dummy_features_select.value else []
+    
+    # Nettoyage pour s'assurer que la variable cible (Y) n'est pas incluse par erreur
+    cont_features = [v for v in chosen_cont if v != target]
+    dummy_features = [v for v in chosen_dummy if v != target]
+    
+    # Sécurité globale : il faut au moins un predictor, quel que soit son type
+    if not cont_features and not dummy_features: 
+        return ui.notify("Please select at least one feature (Continuous or Dummy)!", type='warning')
 
-    state.algo_status_lbl.text = "Exécution mathématique de la régression en tâche de fond..."
+    state.algo_status_lbl.text = "Running pipeline calculations..."
     state.algo_status_lbl.update()
     
   # --- SÉCURISATION DES ARGUMENTS (Extraction stricte des valeurs primitives avant le thread) ---
