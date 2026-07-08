@@ -13,6 +13,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from io import BytesIO, StringIO
 import base64
+import time
 
 from nicegui import ui, run
 from codecarbon import EmissionsTracker
@@ -85,8 +86,28 @@ class EcoRetinaChatAgent:
         self.provider = provider
         self.api_key = api_key
         self.system_prompt = (
-            "You are the Chief Econometrician and AI Support Guide for the EcoRETINA ML Workbench.\n"
-            "Output strictly plain text. Use ALL CAPS for emphasis."
+            "You are the Chief Econometrician and AI Support Guide for the EcoRETINA ML Workbench.\n\n"
+            "ROLE 1 - WORKBENCH NAVIGATOR: Guide users if they are lost.\n"
+            "- Tab 1 (Data): Import, handle outliers, encode dummies, drop columns, scale data.\n"
+            "- Tab 2 (Algorithms): Select model, set hyperparameters, run training pipeline.\n"
+            "- Tab 3 (Compare): Compare runs, analyze stats, view historical benchmarks.\n"
+            "- Tab 5 (Predict): Load new datasets for Inference and export predictions.\n\n"
+            "ROLE 2 - SENIOR ECONOMETRICIAN: When analyzing run metrics, provide a rigorous academic interpretation:\n"
+            "1. Assess R-squared and Adjusted R-squared to explain the variance captured.\n"
+            "2. Identify potential OVERFITTING by strictly comparing Train vs Test performance.\n"
+            "3. Evaluate prediction accuracy using RMSE and MAPE.\n"
+            "4. Analyze the Shapiro-Wilk p-value (if > 0.05, residuals are normally distributed, validating hypotheses).\n"
+            "5. Comment on environmental efficiency based on CodeCarbon emissions (kgCO2eq).\n\n"
+            "ROLE 3 - ACTIVE DATA ENGINEER (CRITICAL): If the user explicitly asks you to modify the dataset "
+            "(drop columns, drop missing values, or encode variables), you MUST execute it by adding exact command tags at the very end of your response.\n"
+            "Available tags:\n"
+            "[CMD_DROP_COL:column_name] -> Drops the specified column.\n"
+            "[CMD_DROP_NA] -> Drops all rows with missing values.\n"
+            "[CMD_ENCODE:column_name] -> One-Hot Encodes the categorical column.\n"
+            "Example response: 'I have deleted the ID column as requested. [CMD_DROP_COL:ID]'\n\n"
+            "TONE: Professional, pedagogical, highly structured. Answer in English.\n"
+            "CRITICAL FORMATTING RULE: DO NOT use any Markdown or LaTeX formatting (no asterisks, no underscores, no bold). "
+            "Output strictly plain text. Use ALL CAPS for emphasis and simple hyphens (-) for lists."
         )
         self.history = []
 
@@ -101,25 +122,39 @@ class EcoRetinaChatAgent:
             self.client = Groq(api_key=api_key)
 
     async def ask(self, text: str, bubble_ui):
-        try:
-            if self.provider == "Google Gemini":
-                response = self.client.chats.create(model="gemini-2.5-flash")
-                reply = response.send_message(text).text
-            elif self.provider == "OpenAI (ChatGPT)":
-                self.history.append({"role": "user", "content": text})
-                response = self.client.chat.completions.create(model="gpt-4o-mini", messages=self.history)
-                reply = response.choices[0].message.content
-            elif self.provider == "Groq":
-                self.history.append({"role": "user", "content": text})
-                response = self.client.chat.completions.create(model="llama-3.3-70b-versatile", messages=self.history)
-                reply = response.choices[0].message.content
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.provider == "Google Gemini":
+                    response = self.client.chats.create(model="gemini-2.5-flash")
+                    reply = response.send_message(text).text
+                elif self.provider == "OpenAI (ChatGPT)":
+                    self.history.append({"role": "user", "content": text})
+                    response = self.client.chat.completions.create(model="gpt-4o-mini", messages=self.history)
+                    reply = response.choices[0].message.content
+                elif self.provider == "Groq":
+                    self.history.append({"role": "user", "content": text})
+                    response = self.client.chat.completions.create(model="llama-3.3-70b-versatile", messages=self.history)
+                    reply = response.choices[0].message.content
                 
-            # Overwrite the placeholder text with the actual answer
-            bubble_ui.text = reply
-            bubble_ui.update()
-        except Exception as e:
-            bubble_ui.text = f"[API Error] : {str(e)}"
-            bubble_ui.update()
+                # Si le calcul réussit, on met à jour l'UI et on sort de la boucle de retry
+                bubble_ui.text = reply
+                bubble_ui.update()
+                return
+
+            except Exception as e:
+                # Si c'est une erreur 503 ou réseau et qu'il nous reste des essais
+                if ("503" in str(e) or "unavailable" in str(e).lower()) and attempt < max_retries - 1:
+                    wait_time = 2 * (attempt + 1)
+                    bubble_ui.text = f"⏳ Service busy (503). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
+                    bubble_ui.update()
+                    time.sleep(wait_time) # Pause avant le prochain essai
+                    continue
+                
+                # Si c'est une autre erreur ou si tous les essais ont échoué
+                bubble_ui.text = f"[API Error] : {str(e)}"
+                bubble_ui.update()
+                return
 
 # ==========================================
 # 3. INTERFACE DESIGN INCURVÉ & MODERNE
@@ -186,7 +221,7 @@ def main_page():
                 
                 # 2. Render Temporary "Thinking..." loading placeholder bubble
                 ai_bubble = ui.label("⏳ Thinking...").classes(
-                    'text-slate-200 block ml-2 bg-slate-800/80 p-3 rounded-2xl text-sm border border-slate-700/50 animate-pulse'
+                    'text-slate-200 block ml-2 bg-slate-800/80 p-3 rounded-2xl text-sm border border-slate-700/50'
                 )
                 
                 # Scroll instantly to the bottom of the log area
