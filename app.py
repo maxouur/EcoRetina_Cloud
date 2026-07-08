@@ -284,7 +284,7 @@ def main_page():
                         
                         with ui.row().classes('w-full gap-4 items-center'):
                             state.algo_choice = ui.select(['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet', 'XGBoost', 'Random Forest', 'Neural Network'], value='EcoRETINA', on_change=refresh_algo_param_view).classes('w-1/3 rounded-xl')
-                            state.main_target_select = ui.select([], label='Target Variable (Y)'on_change=lambda e: state.features_select_ui.set_value([c for c in state.df.columns if c != e.value])).classes('w-1/3 rounded-xl')
+                            state.main_target_select = ui.select([], label='Target Variable (Y)', on_change=lambda e: state.features_select_ui.set_value([c for c in state.df.columns if c != e.value])).classes('w-1/3 rounded-xl')
                         
                         state.param_options_frame = ui.row().classes('w-full bg-slate-950/50 p-4 rounded-xl border border-slate-800 mt-4')
                         
