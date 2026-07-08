@@ -358,6 +358,32 @@ def main_page():
                                     multiple=True, 
                                     label="Select Dummy/Binary Variables"
                                 ).props('use-chips chips-color=purple bg-color=slate-950 filled').classes('w-full h-40 rounded-xl border border-slate-800')
+                        # ------------------------------------------
+                        # PIPELINE EXECUTION & ACTION BUTTONS BAR
+                        # ------------------------------------------
+                        ui.label('Execution Controls').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
+                        
+                        # Row container holding the Run button, loading status label, and Cancel button
+                        with ui.row().classes('w-full items-center bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 gap-4 mt-2'):
+                            
+                            # 🚀 THE MAIN RUN BUTTON
+                            state.btn_run = ui.button(
+                                '► Run Model Pipeline', 
+                                on_click=trigger_pipeline_execution
+                            ).classes('bg-emerald-600 hover:bg-emerald-700 text-white font-black text-md px-6 py-2 rounded-xl shadow-lg shadow-emerald-500/10 transition-all')
+                            
+                            # ⏳ PIPELINE RUNTIME LOGICAL MONITOR STATUS
+                            state.algo_status_lbl = ui.label('System Ready. Waiting for execution...').classes('text-sm text-slate-400 font-mono flex-grow italic')
+                            
+                            # 🛑 THE EMERGENCY CANCELLATION BUTTON
+                            state.btn_stop = ui.button(
+                                'Stop', 
+                                on_click=lambda: ui.notify('Aborting calculations...', type='warning')
+                            ).classes('bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-xl font-bold px-4 transition-all')
+                            
+                            # Disable stop button by default until a thread runs
+                            state.btn_stop.disable()
+                
                 # ------------------------------------------
                 # ETAPE 3 : COMPARE RESULTS
                 # ------------------------------------------
@@ -417,8 +443,8 @@ def main_page():
 
         with ui.tab_panel('tutorial'):
             with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-white'):
-                ui.label('Documentation Applicative').classes('text-lg font-bold text-emerald-400 mb-4')
-                ui.markdown("L'environnement asynchrone est maintenant 100% blindé face aux téléversements.")
+                ui.label('Tutorial').classes('text-lg font-bold text-emerald-400 mb-4')
+                ui.markdown("# EcoRETINA ML Workbench - User Guide")
 
     refresh_algo_param_view()
 
