@@ -199,12 +199,12 @@ def main_page():
                             ui.label('Dataset Import & Sample Strategy').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
                             
                             # METHODE UNIVERSELLE : On extrait directement les octets réseau
-                            ui.upload(label='Glissez-déposez votre CSV', on_upload=import_main_dataset_from_event).classes('w-full rounded-2xl')
+                            ui.upload(label='Dataset import', on_upload=import_main_dataset_from_event).classes('w-full rounded-2xl')
                             
                             ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4 rounded-xl')
                             with ui.column().classes('w-full') as split_container:
                                 state.split_slider = ui.slider(min=50, max=100, value=80).classes('w-full mt-2')
-                                ui.label().bind_text_from(state.split_slider, 'value', backward=lambda v: f"Ratio d'apprentissage : {v}%")
+                                ui.label().bind_text_from(state.split_slider, 'value', backward=lambda v: f"{v}%")
                             with ui.column().classes('w-full hidden') as kfold_container:
                                 state.kfold_input = ui.number(label='Nombre de Folds (K)', value=5, min=2).classes('w-full rounded-xl')
                             state.split_container_ui = split_container
@@ -215,25 +215,25 @@ def main_page():
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                             ui.label('Traitements & Nettoyage Avancé').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                             
-                            with ui.expansion('Gestion des Outliers (Valeurs Extrêmes)', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
-                                state.outlier_select = ui.select([], label='Variable Numérique').classes('w-full')
+                            with ui.expansion('Outliers management', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
+                                state.outlier_select = ui.select([], label='Select Numerical variable', on_change=on_outlier_variable_select).classes('w-full')
                                 with ui.row().classes('w-full gap-2'):
-                                    state.outlier_min = ui.number(label='Borne Inf').classes('w-[47%]')
-                                    state.outlier_max = ui.number(label='Borne Sup').classes('w-[47%]')
+                                    state.outlier_min = ui.number(label='Lower Bound').classes('w-[47%]')
+                                    state.outlier_max = ui.number(label='Upper Bound').classes('w-[47%]')
                                 state.outlier_action = ui.select(['Clip (Cap values)', 'Drop rows'], value='Clip (Cap values)').classes('w-full')
-                                ui.button('Appliquer le filtre Outliers', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
+                                ui.button('Apply', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
 
-                            with ui.expansion('Variables Qualitatives / Encodage', icon='g_translate').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
-                                state.cat_select = ui.select([], label='Variable Catégorielle', on_change=update_cat_reference).classes('w-full')
-                                state.cat_ref_select = ui.select([], label='Catégorie de Référence (Dropped)').classes('w-full')
+                            with ui.expansion('String/categorical variables', icon='g_translate').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
+                                state.cat_select = ui.select([], label='Categorical variable', on_change=update_cat_reference).classes('w-full')
+                                state.cat_ref_select = ui.select([], label='Reference Category (Dropped)').classes('w-full')
                                 with ui.row().classes('w-full gap-2 mt-2'):
-                                    ui.button('Encoder en Dummies', on_click=lambda: run_cat_transformation('encode')).classes('bg-blue-600 w-[48%] rounded-xl')
-                                    ui.button('Supprimer Colonne', on_click=lambda: run_cat_transformation('drop')).classes('bg-red-600/80 w-[48%] rounded-xl')
+                                    ui.button('Encode as Dummies', on_click=lambda: run_cat_transformation('encode')).classes('bg-blue-600 w-[48%] rounded-xl')
+                                    ui.button('Drop Column', on_click=lambda: run_cat_transformation('drop')).classes('bg-red-600/80 w-[48%] rounded-xl')
 
                             with ui.expansion('Normalisation / Scaling', icon='scale').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl'):
                                 state.scale_scope = ui.select(['All Predictors', 'Target Variable ONLY', 'All Variables'], value='All Predictors').classes('w-full')
                                 state.scale_method = ui.select(['StandardScaler (Z-Score)', 'MinMaxScaler (0-1)'], value='StandardScaler (Z-Score)').classes('w-full')
-                                ui.button('Exécuter la mise à l\'échelle', on_click=run_scaling_process).classes('w-full bg-indigo-600 rounded-xl mt-2')
+                                ui.button('Apply Scaling', on_click=run_scaling_process).classes('w-full bg-indigo-600 rounded-xl mt-2')
 
                 # ------------------------------------------
                 # ETAPE 2 : ALGORITHMS & PARAMS
@@ -422,18 +422,63 @@ def update_cat_reference(e):
     state.cat_ref_select.options = instances
     if instances: state.cat_ref_select.value = instances[0]
 
+def on_outlier_variable_select(e):
+    if state.df is None or not e.value: 
+        return
+        
+    col = e.value
+    try:
+        stats_desc = state.df[col].describe()
+        
+        state.outlier_min.placeholder = f"Min: {stats_desc.get('min', 0):.2f} | Mean: {stats_desc.get('mean', 0):.2f}"
+        state.outlier_max.placeholder = f"Max: {stats_desc.get('max', 0):.2f} | Q3: {stats_desc.get('75%', 0):.2f}"
+        
+        state.outlier_min.update()
+        state.outlier_max.update()
+        
+        ui.notify(
+            f"Stats loaded for '{col}': Mean={stats_desc.get('mean', 0):.2f}, "
+            f"StdDev={stats_desc.get('std', 0):.2f}, Q50(Med)={stats_desc.get('50%', 0):.2f}",
+            type='info'
+        )
+    except Exception as ex:
+        print(f"Error computing variable stats: {str(ex)}")
+
 def process_outliers():
-    if state.df is None or not state.outlier_select.value: return
+    if state.df is None or not state.outlier_select.value: 
+        return
+        
     col = state.outlier_select.value
-    mn, mx = state.outlier_min.value, state.outlier_max.value
-    if mn is None or mx is None: return ui.notify("Spécifiez les bornes !")
+    
+    # Retrieve raw inputs from the NiceGUI UI components
+    raw_min = state.outlier_min.value
+    raw_max = state.outlier_max.value
+    
+    # Safety check: if both fields are blank, notify the user and stop
+    if raw_min is None and raw_max is None: 
+        return ui.notify("Please specify at least a Lower or an Upper boundary!", type='warning')
     
     state.save_state(f"Outliers on {col}")
-    if 'Clip' in state.outlier_action.value:
+    action_type = state.outlier_action.value
+    
+    # --- MODE 1: CLIP VALUES (CAP AT BOUNDARIES) ---
+    if 'Clip' in action_type:
+        mn = float(raw_min) if raw_min is not None else float(state.df[col].min())
+        mx = float(raw_max) if raw_max is not None else float(state.df[col].max())
         state.df[col] = state.df[col].clip(lower=mn, upper=mx)
+        state.log(f"Outlier filter (Clip) applied on '{col}' [{mn}, {mx}].")
+        
+    # --- MODE 2: DROP ROWS OUTSIDE BOUNDARIES ---
     else:
-        state.df = state.df[(state.df[col] >= mn) & (state.df[col] <= mx)]
-    state.log(f"Filtre Outlier validé sur '{col}'.")
+        initial_len = len(state.df)
+        if raw_min is not None:
+            state.df = state.df[state.df[col] >= float(raw_min)]
+        if raw_max is not None:
+            state.df = state.df[state.df[col] <= float(raw_max)]
+            
+        dropped_rows = initial_len - len(state.df)
+        state.log(f"Outlier filter (Drop) applied on '{col}'. {dropped_rows} rows removed.")
+        
     sync_all_comboboxes()
 
 def run_cat_transformation(action):
