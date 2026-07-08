@@ -113,9 +113,13 @@ class EcoRetinaChatAgent:
                 self.history.append({"role": "user", "content": text})
                 response = self.client.chat.completions.create(model="llama-3.3-70b-versatile", messages=self.history)
                 reply = response.choices[0].message.content
+                
+            # Overwrite the placeholder text with the actual answer
             bubble_ui.text = reply
+            bubble_ui.update()
         except Exception as e:
-            bubble_ui.text = f"[Erreur API] : {str(e)}"
+            bubble_ui.text = f"[API Error] : {str(e)}"
+            bubble_ui.update()
 
 # ==========================================
 # 3. INTERFACE DESIGN INCURVÉ & MODERNE
@@ -156,27 +160,62 @@ def main_page():
     with ui.right_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-l-3xl border-l border-slate-800') as right_drawer:
         ui.label('AI Assistant').classes('text-lg font-black text-emerald-400 mb-2')
         provider_ui = ui.select(["Google Gemini", "OpenAI (ChatGPT)", "Groq"], value="Google Gemini").classes('w-full rounded-xl')
-        key_ui = ui.input(placeholder='Clé API', password=True).classes('w-full rounded-xl')
+        key_ui = ui.input(placeholder='API Key', password=True).classes('w-full rounded-xl')
         
         chat_container = ui.scroll_area().classes('w-full h-96 bg-slate-950/60 p-3 rounded-2xl border border-slate-800 my-4 shadow-inner')
         
         async def connect_ai():
-            if not key_ui.value: return ui.notify("Clé manquante !")
+            if not key_ui.value: return ui.notify("Missing API Key!", type='warning')
             state.ai_agent = EcoRetinaChatAgent(key_ui.value, provider_ui.value)
-            state.log(f"IA connectée avec succès via {provider_ui.value}")
+            state.log(f"AI Agent successfully connected via {provider_ui.value}")
         
-        ui.button('Connecter l\'IA', on_click=connect_ai).classes('w-full bg-emerald-600 rounded-xl font-bold shadow-lg shadow-emerald-500/20')
+        ui.button('Connect AI Agent', on_click=connect_ai).classes('w-full bg-emerald-600 rounded-xl font-bold shadow-lg shadow-emerald-500/20')
         
+        # --- NEW CHAT INPUT & SEND BUTTON ACTION FRAME ---
+        chat_row = ui.row().classes('w-full mt-4 items-center gap-2 no-wrap')
+        with chat_row:
+            state.chat_input = ui.input(placeholder='Ask a question...').classes('flex-grow rounded-xl')
+            state.chat_send_btn = ui.button('Send', on_click=submit_chat).classes('bg-emerald-600 rounded-xl font-bold px-4')
+            
+        # Bind the enter key press to the input box as well
+        state.chat_input.on('keydown.enter', submit_chat)
         chat_input = ui.input(placeholder='Posez votre question...').classes('w-full mt-4 rounded-xl')
         async def submit_chat():
-            if not chat_input.value: return
-            if not state.ai_agent: return
+            msg = state.chat_input.value.strip()
+            if not msg or not state.ai_agent: 
+                return
+                
+            # Disable inputs while the AI is computing to prevent double submissions
+            state.chat_input.disable()
+            state.chat_send_btn.disable()
+            
             with chat_container:
-                ui.label(f"User: {chat_input.value}").classes('text-blue-400 font-bold block mt-2 text-sm')
-                ai_b = ui.label("Analyse en cours...").classes('text-slate-200 block ml-2 bg-slate-800/80 p-3 rounded-2xl text-sm border border-slate-700/50')
-                await state.ai_agent.ask(chat_input.value, ai_b)
-                chat_input.value = ''
-        chat_input.on('keydown.enter', submit_chat)
+                # 1. Render User Message
+                ui.label(f"User: {msg}").classes('text-blue-400 font-bold block mt-2 text-sm')
+                
+                # 2. Render Temporary "Thinking..." loading placeholder bubble
+                ai_bubble = ui.label("⏳ Thinking...").classes(
+                    'text-slate-200 block ml-2 bg-slate-800/80 p-3 rounded-2xl text-sm border border-slate-700/50 animate-pulse'
+                )
+                
+                # Scroll instantly to the bottom of the log area
+                chat_container.scroll_to(percent=1.0)
+                
+            # Clear input box immediately
+            state.chat_input.value = ''
+            
+            # 3. Offload the heavy API network call to run concurrently
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, run_ai_task, msg, ai_bubble)
+            
+            # Re-enable the interface when execution completes
+            state.chat_input.enable()
+            state.chat_send_btn.enable()
+            chat_container.scroll_to(percent=1.0)
+
+        def run_ai_task(msg, ui_element):
+            # A wrapper task executor because NiceGUI components need async event loops
+            asyncio.run(state.ai_agent.ask(msg, ui_element))
 
     # --- BLOC DE CONTENU GENERAL ---
     with ui.tab_panels(ui.tabs(), value='workspace').classes('w-full bg-transparent px-4') as main_tabs:
@@ -245,7 +284,7 @@ def main_page():
                         
                         with ui.row().classes('w-full gap-4 items-center'):
                             state.algo_choice = ui.select(['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet', 'XGBoost', 'Random Forest', 'Neural Network'], value='EcoRETINA', on_change=refresh_algo_param_view).classes('w-1/3 rounded-xl')
-                            state.main_target_select = ui.select([], label='Variable Cible (Y) à modéliser').classes('w-1/3 rounded-xl')
+                            state.main_target_select = ui.select([], label='Target Variable (Y)'on_change=lambda e: state.features_select_ui.set_value([c for c in state.df.columns if c != e.value])).classes('w-1/3 rounded-xl')
                         
                         state.param_options_frame = ui.row().classes('w-full bg-slate-950/50 p-4 rounded-xl border border-slate-800 mt-4')
                         
@@ -389,14 +428,12 @@ def toggle_split_view(strategy):
     else:
         state.split_container_ui.add_class('hidden')
         state.kfold_container_ui.remove_class('hidden')
-
 def sync_all_comboboxes():
     if state.df is None: return
     cols = [str(c) for c in state.df.columns]
     num_cols = [str(c) for c in state.df.select_dtypes(include=[np.number]).columns]
     cat_cols = [str(c) for c in state.df.select_dtypes(include=['object', 'category']).columns]
     
-    # Mise à jour des listes de choix
     state.outlier_select.options = num_cols
     if num_cols: state.outlier_select.value = num_cols[0]
     state.outlier_select.update()
@@ -405,14 +442,14 @@ def sync_all_comboboxes():
     if cat_cols: state.cat_select.value = cat_cols[0]
     state.cat_select.update()
     
-    # Dans sync_all_comboboxes() :
     state.main_target_select.options = cols
     if cols: state.main_target_select.value = cols[0]
     state.main_target_select.update()
     
-    # 🔄 Nouvelle logique pour remplir notre liste défilante multiple
+    # 🔄 FIX: Assign the list of columns to the new scrolling selector component
     state.features_select_ui.options = cols
-    # Par défaut, on peut pré-sélectionner toutes les colonnes sauf la cible (Y)
+    
+    # Pre-select all columns except the target (Y) by default to save time
     state.features_select_ui.value = [c for c in cols if c != state.main_target_select.value]
     state.features_select_ui.update()
 
