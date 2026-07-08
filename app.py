@@ -171,15 +171,6 @@ def main_page():
         
         ui.button('Connect AI Agent', on_click=connect_ai).classes('w-full bg-emerald-600 rounded-xl font-bold shadow-lg shadow-emerald-500/20')
         
-        # --- NEW CHAT INPUT & SEND BUTTON ACTION FRAME ---
-        chat_row = ui.row().classes('w-full mt-4 items-center gap-2 no-wrap')
-        with chat_row:
-            state.chat_input = ui.input(placeholder='Ask a question...').classes('flex-grow rounded-xl')
-            state.chat_send_btn = ui.button('Send', on_click=submit_chat).classes('bg-emerald-600 rounded-xl font-bold px-4')
-            
-        # Bind the enter key press to the input box as well
-        state.chat_input.on('keydown.enter', submit_chat)
-        chat_input = ui.input(placeholder='Posez votre question...').classes('w-full mt-4 rounded-xl')
         async def submit_chat():
             msg = state.chat_input.value.strip()
             if not msg or not state.ai_agent: 
@@ -212,6 +203,16 @@ def main_page():
             state.chat_input.enable()
             state.chat_send_btn.enable()
             chat_container.scroll_to(percent=1.0)
+
+         # --- NEW CHAT INPUT & SEND BUTTON ACTION FRAME ---
+        chat_row = ui.row().classes('w-full mt-4 items-center gap-2 no-wrap')
+        with chat_row:
+            state.chat_input = ui.input(placeholder='Ask a question...').classes('flex-grow rounded-xl')
+            state.chat_send_btn = ui.button('Send', on_click=submit_chat).classes('bg-emerald-600 rounded-xl font-bold px-4')
+            
+        # Bind the enter key press to the input box as well
+        state.chat_input.on('keydown.enter', submit_chat)
+        chat_input = ui.input(placeholder='Posez votre question...').classes('w-full mt-4 rounded-xl')
 
         def run_ai_task(msg, ui_element):
             # A wrapper task executor because NiceGUI components need async event loops
