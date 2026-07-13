@@ -332,31 +332,27 @@ def main_page():
                            # 📉 LIST 1: CONTINUOUS VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Continuous Features (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
-                                state.cont_features_select = ui.select(
-                                    options=[], 
-                                    multiple=True, 
-                                    label="Select Continuous Variables"
-                                ).classes('w-full h-12 max-h-12 overflow-y-auto rounded-xl border border-slate-800 scrollbar-thin') 
-                                # 🪄 .classes('... h-12 max-h-12 overflow-y-auto ...') enferme les variables sélectionnés dans 1 seule ligne !
-
-                                state.cont_features_select.props('''
-                                    bg-color=slate-950 filled clearable
-                                    popup-content-style="max-height: 250px;"
-                                ''') # On a supprimé la ligne 'display-value' qui bloquait tout
+                                
+                                # Un menu d'extension propre qui s'ouvre au clic
+                                with ui.expansion('Select Continuous Variables', icon='analytics').classes('w-full rounded-xl border border-slate-800 bg-slate-950'):
+                                    # Une zone fixe de 250px avec scroll interne pour tes 200 variables
+                                    with ui.scroll_area().classes('h-60 p-2'):
+                                        # C'est ici que tu mettras ta boucle pour générer les variables (ex: for col in cols:)
+                                        # Exemple temporaire pour que l'UI ne crash pas :
+                                        state.cont_checkboxes = {}
+                                        # for col in continuous_cols:
+                                        #     state.cont_checkboxes[col] = ui.checkbox(col).classes('text-xs')
 
                             # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Dummy Variables (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
-                                state.dummy_features_select = ui.select(
-                                    options=[], 
-                                    multiple=True, 
-                                    label="Select Dummy/Binary Variables"
-                                ).classes('w-full h-12 max-h-12 overflow-y-auto rounded-xl border border-slate-800 scrollbar-thin')
-
-                                state.dummy_features_select.props('''
-                                    bg-color=slate-950 filled clearable
-                                    popup-content-style="max-height: 250px;"
-                                ''')
+                                
+                                # Le même menu d'extension pour les dummies
+                                with ui.expansion('Select Dummy Variables', icon='tune').classes('w-full rounded-xl border border-slate-800 bg-slate-950'):
+                                    with ui.scroll_area().classes('h-60 p-2'):
+                                        state.dummy_checkboxes = {}
+                                        # for col in dummy_cols:
+                                        #     state.dummy_checkboxes[col] = ui.checkbox(col).classes('text-xs')
                         # ------------------------------------------
                         # PIPELINE EXECUTION & ACTION BUTTONS BAR
                         # ------------------------------------------
