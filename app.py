@@ -287,7 +287,7 @@ def main_page():
                             ui.button('Visualiser la table de données', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
 
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                            ui.label('Traitements & Nettoyage Avancé').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
+                            ui.label('Advanced Data Cleaning').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                             
                             with ui.expansion('Outliers management', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
                                 state.outlier_select = ui.select([], label='Select Numeric variable', on_change=on_outlier_variable_select).classes('w-full')
@@ -297,18 +297,6 @@ def main_page():
                                     state.outlier_max = ui.number(label='Upper Bound').classes('w-[47%]')
                                 state.outlier_action = ui.select(['Clip (Cap values)', 'Drop rows'], value='Clip (Cap values)').classes('w-full')
                                 ui.button('Apply', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
-
-                            with ui.expansion('String/categorical variables', icon='g_translate').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
-                                state.cat_select = ui.select([], label='Categorical variable', on_change=update_cat_reference).classes('w-full')
-                                state.cat_ref_select = ui.select([], label='Reference Category (Dropped)').classes('w-full')
-                                with ui.row().classes('w-full gap-2 mt-2'):
-                                    ui.button('Encode as Dummies', on_click=lambda: run_cat_transformation('encode')).classes('bg-blue-600 w-[48%] rounded-xl')
-                                    ui.button('Drop Column', on_click=lambda: run_cat_transformation('drop')).classes('bg-red-600/80 w-[48%] rounded-xl')
-
-                            with ui.expansion('Normalisation / Scaling', icon='scale').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl'):
-                                state.scale_scope = ui.select(['All Predictors', 'Target Variable ONLY', 'All Variables'], value='All Predictors').classes('w-full')
-                                state.scale_method = ui.select(['StandardScaler (Z-Score)', 'MinMaxScaler (0-1)'], value='StandardScaler (Z-Score)').classes('w-full')
-                                ui.button('Apply Scaling', on_click=run_scaling_process).classes('w-full bg-indigo-600 rounded-xl mt-2')
 
                # ------------------------------------------
                 # STEP 2: ALGORITHMS & PARAMS
@@ -348,7 +336,13 @@ def main_page():
                                     options=[], 
                                     multiple=True, 
                                     label="Select Continuous Variables"
-                                ).props('use-chips chips-color=blue bg-color=slate-950 filled').classes('w-full h-40 rounded-xl border border-slate-800')
+                                ).classes('w-full h-40 rounded-xl border border-slate-800')
+
+                                state.cont_features_select.props('''
+                                    bg-color=slate-950 filled clearable use-input
+                                    popup-content-style="max-height: 250px;"
+                                    display-value=" "
+                                ''')
 
                             # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
                             with ui.column().classes('w-1/2'):
@@ -357,7 +351,13 @@ def main_page():
                                     options=[], 
                                     multiple=True, 
                                     label="Select Dummy/Binary Variables"
-                                ).props('use-chips chips-color=purple bg-color=slate-950 filled').classes('w-full h-40 rounded-xl border border-slate-800')
+                                ).classes('w-full h-40 rounded-xl border border-slate-800')
+
+                                state.dummy_features_select.props('''
+                                    bg-color=slate-950 filled clearable use-input
+                                    popup-content-style="max-height: 250px;"
+                                    display-value=" "
+                                ''')
                         # ------------------------------------------
                         # PIPELINE EXECUTION & ACTION BUTTONS BAR
                         # ------------------------------------------
