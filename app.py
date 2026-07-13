@@ -336,14 +336,13 @@ def main_page():
                                     options=[], 
                                     multiple=True, 
                                     label="Select Continuous Variables"
-                                ).classes('w-full h-40 rounded-xl border border-slate-800')
+                                ).classes('w-full h-12 max-h-12 overflow-y-auto rounded-xl border border-slate-800 scrollbar-thin') 
+                                # 🪄 .classes('... h-12 max-h-12 overflow-y-auto ...') enferme les variables sélectionnés dans 1 seule ligne !
 
-                                # 🏁 FIX : Enlevé 'use-input' et ajouté un texte fixe pour remplacer les puces
                                 state.cont_features_select.props('''
                                     bg-color=slate-950 filled clearable
                                     popup-content-style="max-height: 250px;"
-                                    display-value="Click to see selection"
-                                ''')
+                                ''') # On a supprimé la ligne 'display-value' qui bloquait tout
 
                             # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
                             with ui.column().classes('w-1/2'):
@@ -352,13 +351,11 @@ def main_page():
                                     options=[], 
                                     multiple=True, 
                                     label="Select Dummy/Binary Variables"
-                                ).classes('w-full h-40 rounded-xl border border-slate-800')
+                                ).classes('w-full h-12 max-h-12 overflow-y-auto rounded-xl border border-slate-800 scrollbar-thin')
 
-                                # 🏁 FIX : Enlevé 'use-input' et ajouté un texte fixe pour remplacer les puces
                                 state.dummy_features_select.props('''
                                     bg-color=slate-950 filled clearable
                                     popup-content-style="max-height: 250px;"
-                                    display-value="Click to see selection"
                                 ''')
                         # ------------------------------------------
                         # PIPELINE EXECUTION & ACTION BUTTONS BAR
