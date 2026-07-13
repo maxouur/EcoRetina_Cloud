@@ -329,30 +329,25 @@ def main_page():
                         # Split columns view for clean feature typing
                         with ui.row().classes('w-full gap-4 mt-2 no-wrap'):
     
-                           # 📉 LIST 1: CONTINUOUS VARIABLES
+                          # 📉 LIST 1: CONTINUOUS VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Continuous Features (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
                                 
-                                # Un menu d'extension propre qui s'ouvre au clic
                                 with ui.expansion('Select Continuous Variables', icon='analytics').classes('w-full rounded-xl border border-slate-800 bg-slate-950'):
-                                    # Une zone fixe de 250px avec scroll interne pour tes 200 variables
-                                    with ui.scroll_area().classes('h-60 p-2'):
-                                        # C'est ici que tu mettras ta boucle pour générer les variables (ex: for col in cols:)
-                                        # Exemple temporaire pour que l'UI ne crash pas :
+                                    # ON ENREGISTRE LA ZONE DE SCROLL DANS LE STATE POUR POUVOIR LA REMPLIR EN PYTHON
+                                    state.cont_scroll_area = ui.scroll_area().classes('h-60 p-2')
+                                    with state.cont_scroll_area:
                                         state.cont_checkboxes = {}
-                                        # for col in continuous_cols:
-                                        #     state.cont_checkboxes[col] = ui.checkbox(col).classes('text-xs')
 
                             # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Dummy Variables (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
                                 
-                                # Le même menu d'extension pour les dummies
                                 with ui.expansion('Select Dummy Variables', icon='tune').classes('w-full rounded-xl border border-slate-800 bg-slate-950'):
-                                    with ui.scroll_area().classes('h-60 p-2'):
+                                    # IDEM ICI POUR LES DUMMIES
+                                    state.dummy_scroll_area = ui.scroll_area().classes('h-60 p-2')
+                                    with state.dummy_scroll_area:
                                         state.dummy_checkboxes = {}
-                                        # for col in dummy_cols:
-                                        #     state.dummy_checkboxes[col] = ui.checkbox(col).classes('text-xs')
                         # ------------------------------------------
                         # PIPELINE EXECUTION & ACTION BUTTONS BAR
                         # ------------------------------------------
@@ -515,37 +510,38 @@ def sync_all_comboboxes():
     if state.df is None: return
     cols = [str(c) for c in state.df.columns]
     num_cols = [str(c) for c in state.df.select_dtypes(include=[np.number]).columns]
-    cat_cols = [str(c) for c in state.df.select_dtypes(include=['object', 'category']).columns]
     
-    # 1. Mise à jour des autres sélecteurs
+    # 1. Mise à jour du sélecteur d'outliers et de la Target Variable
     state.outlier_select.options = num_cols
     if num_cols: state.outlier_select.value = num_cols[0]
     state.outlier_select.update()
-    
-    state.cat_select.options = cat_cols
-    if cat_cols: state.cat_select.value = cat_cols[0]
-    state.cat_select.update()
     
     state.main_target_select.options = cols
     if cols: state.main_target_select.value = cols[0]
     state.main_target_select.update()
     
-    # 2. Séparation intelligente automatique pour l'utilisateur
+    # 2. Séparation et génération dynamique des 200 cases à cocher (X)
     target = state.main_target_select.value
-    
-    # On trie : si une colonne numérique a moins de 3 valeurs uniques, c'est probablement une dummy (0/1)
     suggested_cont = [c for c in num_cols if c != target and state.df[c].nunique() > 2]
     suggested_dummy = [c for c in cols if c != target and (c not in suggested_cont)]
     
-    # Remplissage de la liste des variables continues
-    state.cont_features_select.options = cols
-    state.cont_features_select.value = suggested_cont
-    state.cont_features_select.update()
-    
-    # Remplissage de la liste des variables dummies
-    state.dummy_features_select.options = cols
-    state.dummy_features_select.value = suggested_dummy
-    state.dummy_features_select.update()
+    # Remplissage de la zone de défilement des variables Continues
+    state.cont_scroll_area.clear()
+    state.cont_checkboxes = {}
+    with state.cont_scroll_area:
+        for col in cols:
+            # On coche par défaut si la variable fait partie des variables continues suggérées
+            is_checked = col in suggested_cont
+            state.cont_checkboxes[col] = ui.checkbox(col, value=is_checked).classes('text-xs text-slate-300 block')
+            
+    # Remplissage de la zone de défilement des variables Dummies
+    state.dummy_scroll_area.clear()
+    state.dummy_checkboxes = {}
+    with state.dummy_scroll_area:
+        for col in cols:
+            # On coche par défaut si la variable fait partie des variables dummies suggérées
+            is_checked = col in suggested_dummy
+            state.dummy_checkboxes[col] = ui.checkbox(col, value=is_checked).classes('text-xs text-slate-300 block')
 
 def update_cat_reference(e):
     if state.df is None or not e.value: return
@@ -748,9 +744,9 @@ async def trigger_pipeline_execution():
         target = state.main_target_select.value
         algo = state.algo_choice.value
         
-        # Read from our two new selective dropdown structures
-        chosen_cont = state.cont_features_select.value if state.cont_features_select.value else []
-        chosen_dummy = state.dummy_features_select.value if state.dummy_features_select.value else []
+        # 🪄 Lecture dynamique des variables cochées par l'utilisateur
+        chosen_cont = [col for col, cb in state.cont_checkboxes.items() if cb.value]
+        chosen_dummy = [col for col, cb in state.dummy_checkboxes.items() if cb.value]
         
         # Ensure target variable is not included by accident
         cont_features = [v for v in chosen_cont if v != target]
