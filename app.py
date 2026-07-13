@@ -329,7 +329,7 @@ def main_page():
                         # Split columns view for clean feature typing
                         with ui.row().classes('w-full gap-4 mt-2 no-wrap'):
     
-                            # 📉 LIST 1: CONTINUOUS VARIABLES
+                           # 📉 LIST 1: CONTINUOUS VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Continuous Features (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
                                 state.cont_features_select = ui.select(
@@ -338,10 +338,11 @@ def main_page():
                                     label="Select Continuous Variables"
                                 ).classes('w-full h-40 rounded-xl border border-slate-800')
 
+                                # 🏁 FIX : Enlevé 'use-input' et ajouté un texte fixe pour remplacer les puces
                                 state.cont_features_select.props('''
-                                    bg-color=slate-950 filled clearable use-input
+                                    bg-color=slate-950 filled clearable
                                     popup-content-style="max-height: 250px;"
-                                    display-value=" "
+                                    display-value="Click to see selection"
                                 ''')
 
                             # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
@@ -353,10 +354,11 @@ def main_page():
                                     label="Select Dummy/Binary Variables"
                                 ).classes('w-full h-40 rounded-xl border border-slate-800')
 
+                                # 🏁 FIX : Enlevé 'use-input' et ajouté un texte fixe pour remplacer les puces
                                 state.dummy_features_select.props('''
-                                    bg-color=slate-950 filled clearable use-input
+                                    bg-color=slate-950 filled clearable
                                     popup-content-style="max-height: 250px;"
-                                    display-value=" "
+                                    display-value="Click to see selection"
                                 ''')
                         # ------------------------------------------
                         # PIPELINE EXECUTION & ACTION BUTTONS BAR
