@@ -30,6 +30,12 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import statsmodels.api as sm
 
+from nicegui import app
+
+@app.head('/')
+def read_head():
+    return {"status": "ok"}
+
 try:
     from eco_retina import EcoRETINA
     ECO_RETINA_AVAILABLE = True
