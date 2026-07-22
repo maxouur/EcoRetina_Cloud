@@ -290,7 +290,7 @@ def main_page():
                             state.split_container_ui = split_container
                             state.kfold_container_ui = kfold_container
 
-                            ui.button('Visualiser la table de données', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
+                            ui.button('Visualize Dataset', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
 
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                             ui.label('Advanced Data Cleaning').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
@@ -385,8 +385,8 @@ def main_page():
                 # ------------------------------------------
                 with ui.tab_panel('t_compare'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                        ui.label('Benchmark Comparatif Global').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
-                        ui.label('Les optimaux statistiques sont marqués d\'une étoile (*)').classes('text-xs text-slate-400 mb-4')
+                        ui.label('Global comparative benchmark').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
+                        
                         
                         state.compare_table_ui = ui.table(
                             columns=[
@@ -402,33 +402,33 @@ def main_page():
                         ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800')
                         
                         with ui.row().classes('w-full justify-between mt-6'):
-                            ui.button('Vider l\'historique', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
-                            ui.button('Exporter Synthèse (.csv)', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
+                            ui.button('Clear Table', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
+                            ui.button('Export Comparaison CSV', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
 
                 # ------------------------------------------
                 # ETAPE 4 : PREDICT (INFERENCE)
                 # ------------------------------------------
                 with ui.tab_panel('t_predict'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                        ui.label('Inférence & Prédiction sur Fichiers Vierges').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
+                        ui.label('Prediction on new dataset').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                         
                         with ui.row().classes('w-full gap-6'):
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
-                                ui.label('1. Fichier d\'Inférence').classes('text-sm font-bold text-slate-300 mb-2')
+                                ui.label('1. Load New Dataset').classes('text-sm font-bold text-slate-300 mb-2')
                                 
-                                ui.upload(label='Déposez le fichier de test', on_upload=import_predict_dataset_from_event).classes('w-full rounded-xl')
-                                state.predict_file_lbl = ui.label('Aucun fichier d\'inférence chargé').classes('text-slate-400 font-mono text-xs mt-2')
+                                ui.upload(label='Browse New Dataset', on_upload=import_predict_dataset_from_event).classes('w-full rounded-xl')
+                                state.predict_file_lbl = ui.label('No prediction file loaded').classes('text-slate-400 font-mono text-xs mt-2')
                             
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
-                                ui.label('2. Sélection du Cerveau (Modèle)').classes('text-sm font-bold text-slate-300 mb-2')
-                                state.predict_run_select = ui.select([], label='Choisir un Run Validé').classes('w-full rounded-xl')
+                                ui.label('2. Select Trained Model').classes('text-sm font-bold text-slate-300 mb-2')
+                                state.predict_run_select = ui.select([], label='Choose a model').classes('w-full rounded-xl')
                                 ui.button('Synchroniser les modèles', on_click=sync_predict_runs).classes('w-full bg-slate-800 rounded-xl text-xs mt-2')
 
                         with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
                             with ui.row().classes('gap-3'):
-                                ui.button('Calculer les prédictions', on_click=execute_inference_process).classes('bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl font-bold')
-                                ui.button('Visualiser les estimations', on_click=view_predict_data).classes('bg-blue-600 rounded-xl')
-                            ui.button('Exporter le fichier enrichi (.csv)', on_click=export_predicted_csv).classes('bg-indigo-600 rounded-xl')
+                                ui.button('Run Prediction', on_click=execute_inference_process).classes('bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl font-bold')
+                                ui.button('Visualize Results', on_click=view_predict_data).classes('bg-blue-600 rounded-xl')
+                            ui.button('Export Prediction to CSV', on_click=export_predicted_csv).classes('bg-indigo-600 rounded-xl')
 
         # LOGS & DOCS
         with ui.tab_panel('logs'):
