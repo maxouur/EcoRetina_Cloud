@@ -422,7 +422,7 @@ def main_page():
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('2. Select Trained Model').classes('text-sm font-bold text-slate-300 mb-2')
                                 state.predict_run_select = ui.select([], label='Choose a model').classes('w-full rounded-xl')
-                                ui.button('Synchroniser les modèles', on_click=sync_predict_runs).classes('w-full bg-slate-800 rounded-xl text-xs mt-2')
+                                ui.button('Apply', on_click=sync_predict_runs).classes('w-full bg-slate-800 rounded-xl text-xs mt-2')
 
                         with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
                             with ui.row().classes('gap-3'):
