@@ -158,7 +158,7 @@ async def ask(self, text: str, bubble_ui):
             elif self.provider == "Claude (Anthropic)":
                 self.history.append({"role": "user", "content": text})
                 response = self.client.messages.create(
-                    model="claude-3-5-sonnet-20241022",  # Ou "claude-3-5-haiku-20241022"
+                    model="claude-3-5-sonnet-20241022", 
                     max_tokens=1024,
                     messages=self.history,
                 )
@@ -225,7 +225,7 @@ def main_page():
     # --- DRAWER IA COPILOT ARRONDI ---
     with ui.right_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-l-3xl border-l border-slate-800') as right_drawer:
         ui.label('AI Assistant').classes('text-lg font-black text-emerald-400 mb-2')
-        provider_ui = ui.select(["Google Gemini", "OpenAI (ChatGPT)", "Groq"], value="Google Gemini").classes('w-full rounded-xl')
+        provider_ui = ui.select(["Google Gemini", "OpenAI (ChatGPT)", "Groq", "Claud (Anthropic)"], value="Google Gemini").classes('w-full rounded-xl')
         key_ui = ui.input(placeholder='API Key', password=True).classes('w-full rounded-xl')
         
         chat_container = ui.scroll_area().classes('w-full h-96 bg-slate-950/60 p-3 rounded-2xl border border-slate-800 my-4 shadow-inner')
