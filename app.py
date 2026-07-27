@@ -138,32 +138,40 @@ async def ask(self, text: str, bubble_ui):
     for attempt in range(max_retries):
         try:
             if self.provider == "Google Gemini":
-                response = self.client.chats.create(model="gemini-2.5-flash")
+                response = self.client.chats.create(
+                    model="gemini-2.5-flash",
+                    config={"system_instruction": self.system_prompt},
+                )
                 reply = response.send_message(text).text
 
             elif self.provider == "OpenAI (ChatGPT)":
                 self.history.append({"role": "user", "content": text})
                 response = self.client.chat.completions.create(
-                    model="gpt-4o-mini", messages=self.history
+                    model="gpt-4o-mini", 
+                    messages = [{"role": "system", "content": self.system_prompt}] + self.history
                 )
                 reply = response.choices[0].message.content
 
             elif self.provider == "Groq":
                 self.history.append({"role": "user", "content": text})
                 response = self.client.chat.completions.create(
-                    model="llama-3.3-70b-versatile", messages=self.history
+                    model="llama-3.3-70b-versatile", 
+                    messages = [{"role": "system", "content": self.system_prompt}] + self.history
                 )
                 reply = response.choices[0].message.content
 
             elif self.provider == "Claude (Anthropic)":
                 self.history.append({"role": "user", "content": text})
+            
                 response = self.client.messages.create(
-                    model="claude-sonnet-4-6", 
+                    model="claude-sonnet-4-6",
                     max_tokens=1024,
+                    system=self.system_prompt,  # <--- Claude applique votre prompt système ici !
                     messages=self.history,
                 )
-                # Le contenu de Claude est une liste de blocs de texte
+
                 reply = response.content[0].text
+                self.history.append({"role": "assistant", "content": reply})
 
             # Mise à jour de l'UI et sortie en cas de succès
             bubble_ui.text = reply
