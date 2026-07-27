@@ -15,6 +15,8 @@ from io import BytesIO, StringIO
 import base64
 import time
 
+
+
 from nicegui import ui, run
 from codecarbon import EmissionsTracker
 
@@ -126,41 +128,64 @@ class EcoRetinaChatAgent:
         elif provider == "Groq":
             from groq import Groq
             self.client = Groq(api_key=api_key)
+        elif self.provider == "Claude (Anthropic)":
+            import anthropic
+            self.client = anthropic.Anthropic(api_key="VOTRE_CLE_API_SK_ANT_...")
 
-    async def ask(self, text: str, bubble_ui):
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                if self.provider == "Google Gemini":
-                    response = self.client.chats.create(model="gemini-2.5-flash")
-                    reply = response.send_message(text).text
-                elif self.provider == "OpenAI (ChatGPT)":
-                    self.history.append({"role": "user", "content": text})
-                    response = self.client.chat.completions.create(model="gpt-4o-mini", messages=self.history)
-                    reply = response.choices[0].message.content
-                elif self.provider == "Groq":
-                    self.history.append({"role": "user", "content": text})
-                    response = self.client.chat.completions.create(model="llama-3.3-70b-versatile", messages=self.history)
-                    reply = response.choices[0].message.content
-                
-                # Si le calcul réussit, on met à jour l'UI et on sort de la boucle de retry
-                bubble_ui.text = reply
-                bubble_ui.update()
-                return
 
-            except Exception as e:
-                # Si c'est une erreur 503 ou réseau et qu'il nous reste des essais
-                if ("503" in str(e) or "unavailable" in str(e).lower()) and attempt < max_retries - 1:
-                    wait_time = 2 * (attempt + 1)
-                    bubble_ui.text = f"⏳ Service busy (503). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
-                    bubble_ui.update()
-                    time.sleep(wait_time) # Pause avant le prochain essai
-                    continue
-                
-                # Si c'est une autre erreur ou si tous les essais ont échoué
-                bubble_ui.text = f"[API Error] : {str(e)}"
+async def ask(self, text: str, bubble_ui):
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if self.provider == "Google Gemini":
+                response = self.client.chats.create(model="gemini-2.5-flash")
+                reply = response.send_message(text).text
+
+            elif self.provider == "OpenAI (ChatGPT)":
+                self.history.append({"role": "user", "content": text})
+                response = self.client.chat.completions.create(
+                    model="gpt-4o-mini", messages=self.history
+                )
+                reply = response.choices[0].message.content
+
+            elif self.provider == "Groq":
+                self.history.append({"role": "user", "content": text})
+                response = self.client.chat.completions.create(
+                    model="llama-3.3-70b-versatile", messages=self.history
+                )
+                reply = response.choices[0].message.content
+
+            elif self.provider == "Claude (Anthropic)":
+                self.history.append({"role": "user", "content": text})
+                response = self.client.messages.create(
+                    model="claude-3-5-sonnet-20241022",  # Ou "claude-3-5-haiku-20241022"
+                    max_tokens=1024,
+                    messages=self.history,
+                )
+                # Le contenu de Claude est une liste de blocs de texte
+                reply = response.content[0].text
+
+            # Mise à jour de l'UI et sortie en cas de succès
+            bubble_ui.text = reply
+            bubble_ui.update()
+            return
+
+        except Exception as e:
+            # Gestion des erreurs 503 / Surcharge
+            if (
+                "503" in str(e) or "unavailable" in str(e).lower()
+            ) and attempt < max_retries - 1:
+                wait_time = 2 * (attempt + 1)
+                bubble_ui.text = f"⏳ Service busy (503). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
                 bubble_ui.update()
-                return
+                # On utilise asyncio.sleep au lieu de time.sleep pour ne pas bloquer l'UI
+                await asyncio.sleep(wait_time)
+                continue
+
+            # Si autre erreur ou dernier essai
+            bubble_ui.text = f"[API Error] : {str(e)}"
+            bubble_ui.update()
+            return
 
 # ==========================================
 # 3. INTERFACE DESIGN INCURVÉ & MODERNE
