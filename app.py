@@ -10,14 +10,13 @@ import pandas as pd
 import numpy as np
 import scipy.stats as stats
 from datetime import datetime
+import matplotlib
+matplotlib.use('Agg')  # Anti-crash thread-safe backend
 import matplotlib.pyplot as plt
 from io import BytesIO, StringIO
 import base64
-import time
 
-
-
-from nicegui import ui, run
+from nicegui import ui, run, app
 from codecarbon import EmissionsTracker
 
 # --- ALGORITHMES ET IMPORTS MACHINE LEARNING ---
@@ -31,8 +30,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import statsmodels.api as sm
-
-from nicegui import app
 
 @app.head('/')
 def read_head():
@@ -64,6 +61,7 @@ class Workspace:
         self.train_split_pct = 80.0
         self.k_folds = 5
         self.target_var = ""
+        self.star_phase = 0
 
     def log(self, message):
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -75,8 +73,9 @@ class Workspace:
 
     def save_state(self, action_name):
         if self.df is not None:
-            self.history.append((action_name, self.df.copy()))
-            if len(self.history) > 15:
+            # Deep copy to ensure strictly single-step reversals
+            self.history.append((action_name, self.df.copy(deep=True)))
+            if len(self.history) > 20:
                 self.history.pop(0)
             self.future.clear()
 
@@ -99,7 +98,7 @@ class EcoRetinaChatAgent:
             "- Tab 1 (Data): Import, handle outliers, encode dummies, drop columns, scale data.\n"
             "- Tab 2 (Algorithms): Select model, set hyperparameters, run training pipeline.\n"
             "- Tab 3 (Compare): Compare runs, analyze stats, view historical benchmarks.\n"
-            "- Tab 5 (Predict): Load new datasets for Inference and export predictions.\n\n"
+            "- Tab 4 (Predict): Load new datasets for Inference and export predictions.\n\n"
             "ROLE 2 - SENIOR ECONOMETRICIAN: When analyzing run metrics, provide a rigorous academic interpretation:\n"
             "1. Assess R-squared and Adjusted R-squared to explain the variance captured.\n"
             "2. Identify potential OVERFITTING by strictly comparing Train vs Test performance.\n"
@@ -130,73 +129,64 @@ class EcoRetinaChatAgent:
             self.client = Groq(api_key=api_key)
         elif self.provider == "Claude (Anthropic)":
             import anthropic
-            self.client = anthropic.Anthropic(api_key="VOTRE_CLE_API_SK_ANT_...")
+            self.client = anthropic.Anthropic(api_key=api_key)
 
+    async def ask(self, text: str, bubble_ui):
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if self.provider == "Google Gemini":
+                    response = self.client.chats.create(
+                        model="gemini-2.5-flash",
+                        config={"system_instruction": self.system_prompt},
+                    )
+                    reply = response.send_message(text).text
 
-async def ask(self, text: str, bubble_ui):
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            if self.provider == "Google Gemini":
-                response = self.client.chats.create(
-                    model="gemini-2.5-flash",
-                    config={"system_instruction": self.system_prompt},
-                )
-                reply = response.send_message(text).text
+                elif self.provider == "OpenAI (ChatGPT)":
+                    self.history.append({"role": "user", "content": text})
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o-mini", 
+                        messages = [{"role": "system", "content": self.system_prompt}] + self.history
+                    )
+                    reply = response.choices[0].message.content
 
-            elif self.provider == "OpenAI (ChatGPT)":
-                self.history.append({"role": "user", "content": text})
-                response = self.client.chat.completions.create(
-                    model="gpt-4o-mini", 
-                    messages = [{"role": "system", "content": self.system_prompt}] + self.history
-                )
-                reply = response.choices[0].message.content
+                elif self.provider == "Groq":
+                    self.history.append({"role": "user", "content": text})
+                    response = self.client.chat.completions.create(
+                        model="llama-3.3-70b-versatile", 
+                        messages = [{"role": "system", "content": self.system_prompt}] + self.history
+                    )
+                    reply = response.choices[0].message.content
 
-            elif self.provider == "Groq":
-                self.history.append({"role": "user", "content": text})
-                response = self.client.chat.completions.create(
-                    model="llama-3.3-70b-versatile", 
-                    messages = [{"role": "system", "content": self.system_prompt}] + self.history
-                )
-                reply = response.choices[0].message.content
+                elif self.provider == "Claude (Anthropic)":
+                    self.history.append({"role": "user", "content": text})
+                    response = self.client.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=1024,
+                        system=self.system_prompt,
+                        messages=self.history,
+                    )
+                    reply = response.content[0].text
+                    self.history.append({"role": "assistant", "content": reply})
 
-            elif self.provider == "Claude (Anthropic)":
-                self.history.append({"role": "user", "content": text})
-            
-                response = self.client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=1024,
-                    system=self.system_prompt,  # <--- Claude applique votre prompt système ici !
-                    messages=self.history,
-                )
-
-                reply = response.content[0].text
-                self.history.append({"role": "assistant", "content": reply})
-
-            # Mise à jour de l'UI et sortie en cas de succès
-            bubble_ui.text = reply
-            bubble_ui.update()
-            return
-
-        except Exception as e:
-            # Gestion des erreurs 503 / Surcharge
-            if (
-                "503" in str(e) or "unavailable" in str(e).lower()
-            ) and attempt < max_retries - 1:
-                wait_time = 2 * (attempt + 1)
-                bubble_ui.text = f"⏳ Service busy (503). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
+                bubble_ui.text = reply
                 bubble_ui.update()
-                # On utilise asyncio.sleep au lieu de time.sleep pour ne pas bloquer l'UI
-                await asyncio.sleep(wait_time)
-                continue
+                return
 
-            # Si autre erreur ou dernier essai
-            bubble_ui.text = f"[API Error] : {str(e)}"
-            bubble_ui.update()
-            return
+            except Exception as e:
+                if ("503" in str(e) or "unavailable" in str(e).lower()) and attempt < max_retries - 1:
+                    wait_time = 2 * (attempt + 1)
+                    bubble_ui.text = f"⏳ Service busy (503). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
+                    bubble_ui.update()
+                    await asyncio.sleep(wait_time)
+                    continue
+
+                bubble_ui.text = f"[API Error] : {str(e)}"
+                bubble_ui.update()
+                return
 
 # ==========================================
-# 3. INTERFACE DESIGN INCURVÉ & MODERNE
+# 3. INTERFACE & UI DESIGN
 # ==========================================
 
 @ui.page('/')
@@ -223,14 +213,14 @@ def main_page():
             ui.button('↪ Redo', on_click=apply_redo).props('flat color=white').classes('hover:bg-slate-800 rounded-xl')
             ui.button('🤖 AI Copilot', on_click=lambda: right_drawer.toggle()).classes('bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl font-bold shadow-lg shadow-blue-500/20')
 
-    # --- DRAWER MENU LATÉRAL MODERNE ---
+    # --- DRAWER MENU LATÉRAL ---
     with ui.left_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-r-3xl border-r border-slate-800') as left_drawer:
         ui.label('Navigation').classes('text-sm uppercase tracking-wider font-bold p-2 text-slate-400 border-b border-slate-800 w-full mb-4')
-        ui.button('Workspace Principal', on_click=lambda: main_tabs.set_value('workspace')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
+        ui.button('Main Workspace', on_click=lambda: main_tabs.set_value('workspace')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
         ui.button('Activity Log', on_click=lambda: main_tabs.set_value('logs')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
         ui.button('Tutorial & Docs', on_click=lambda: main_tabs.set_value('tutorial')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
 
-    # --- DRAWER IA COPILOT ARRONDI ---
+    # --- DRAWER IA COPILOT ---
     with ui.right_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-l-3xl border-l border-slate-800') as right_drawer:
         ui.label('AI Assistant').classes('text-lg font-black text-emerald-400 mb-2')
         provider_ui = ui.select(["Google Gemini", "OpenAI (ChatGPT)", "Groq", "Claude (Anthropic)"], value="Google Gemini").classes('w-full rounded-xl')
@@ -250,45 +240,33 @@ def main_page():
             if not msg or not state.ai_agent: 
                 return
                 
-            # Disable inputs while the AI is computing to prevent double submissions
             state.chat_input.disable()
             state.chat_send_btn.disable()
             
             with chat_container:
-                # 1. Render User Message
                 ui.label(f"User: {msg}").classes('text-blue-400 font-bold block mt-2 text-sm')
-                
-                # 2. Render Temporary "Thinking..." loading placeholder bubble
                 ai_bubble = ui.label("⏳ Thinking...").classes(
                     'text-slate-200 block ml-2 bg-slate-800/80 p-3 rounded-2xl text-sm border border-slate-700/50'
                 )
-                
-                # Scroll instantly to the bottom of the log area
                 chat_container.scroll_to(percent=1.0)
                 
-            # Clear input box immediately
             state.chat_input.value = ''
             
-            # 3. Offload the heavy API network call to run concurrently
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, run_ai_task, msg, ai_bubble)
             
-            # Re-enable the interface when execution completes
             state.chat_input.enable()
             state.chat_send_btn.enable()
             chat_container.scroll_to(percent=1.0)
 
-         # --- NEW CHAT INPUT & SEND BUTTON ACTION FRAME ---
         chat_row = ui.row().classes('w-full mt-4 items-center gap-2 no-wrap')
         with chat_row:
             state.chat_input = ui.input(placeholder='Ask a question...').classes('flex-grow rounded-xl')
             state.chat_send_btn = ui.button('Send', on_click=submit_chat).classes('bg-emerald-600 rounded-xl font-bold px-4')
             
-        # Bind the enter key press to the input box as well
         state.chat_input.on('keydown.enter', submit_chat)
 
         def run_ai_task(msg, ui_element):
-            # A wrapper task executor because NiceGUI components need async event loops
             asyncio.run(state.ai_agent.ask(msg, ui_element))
 
     # --- BLOC DE CONTENU GENERAL ---
@@ -304,40 +282,46 @@ def main_page():
             with ui.tab_panels(step_tabs, value='t_data').classes('w-full bg-transparent pt-4 overflow-visible') as step_panels:
                 
                 # ------------------------------------------
-                # ETAPE 1 : DATA & PRE-PROCESSING
+                # STEP 1 : DATA & PRE-PROCESSING
                 # ------------------------------------------
                 with ui.tab_panel('t_data'):
                     with ui.row().classes('w-full gap-6'):
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                             ui.label('Dataset Import & Sample Strategy').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
                             
-                            # METHODE UNIVERSELLE : On extrait directement les octets réseau
                             ui.upload(label='Dataset import', on_upload=import_main_dataset_from_event).classes('w-full rounded-2xl')
                             
                             ui.select(['Train/Test Split', 'K-Fold Cross Validation'], value='Train/Test Split', on_change=lambda e: toggle_split_view(e.value)).classes('w-full mt-4 rounded-xl')
                             with ui.column().classes('w-full') as split_container:
                                 state.split_slider = ui.slider(min=50, max=100, value=80).classes('w-full mt-2')
-                                ui.label().bind_text_from(state.split_slider, 'value', backward=lambda v: f"{v}%")
+                                ui.label().bind_text_from(state.split_slider, 'value', backward=lambda v: f"Train Ratio: {v}%")
                             with ui.column().classes('w-full hidden') as kfold_container:
-                                state.kfold_input = ui.number(label='Nombre de Folds (K)', value=5, min=2).classes('w-full rounded-xl')
+                                state.kfold_input = ui.number(label='Number of Folds (K)', value=5, min=2).classes('w-full rounded-xl')
                             state.split_container_ui = split_container
                             state.kfold_container_ui = kfold_container
 
-                            ui.button('Visualize Dataset', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
+                            ui.button('Visualize Dataset & Statistics', on_click=view_main_data).classes('bg-blue-600/90 w-full mt-6 rounded-xl py-2 font-bold')
 
                         with ui.card().classes('w-full md:w-[48%] bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                            ui.label('Advanced Data Cleaning').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
+                            ui.label('Advanced Outlier Management').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-2')
                             
-                            with ui.expansion('Outliers management', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
-                                state.outlier_select = ui.select([], label='Select Numeric variable', on_change=on_outlier_variable_select).classes('w-full')
+                            with ui.expansion('Outlier Filtering Options', icon='analytics').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-3'):
+                                state.outlier_select = ui.select([], label='Select Numeric Variable', on_change=on_outlier_variable_select).classes('w-full')
                                 state.outlier_stats_area = ui.html('<div class="text-slate-400 font-mono text-xs p-2 bg-slate-950 rounded-xl border border-slate-800/50">Select a variable to view descriptive statistics...</div>').classes('w-full my-2')
                                 with ui.row().classes('w-full gap-2'):
                                     state.outlier_min = ui.number(label='Lower Bound').classes('w-[47%]')
                                     state.outlier_max = ui.number(label='Upper Bound').classes('w-[47%]')
-                                state.outlier_action = ui.select(['Clip (Cap values)', 'Drop rows'], value='Clip (Cap values)').classes('w-full')
-                                ui.button('Apply', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
+                                
+                                # POINT 2: STANDARD ACADEMIC TERMINOLOGY FOR OUTLIERS
+                                state.outlier_action = ui.select(
+                                    ['Winsorize (Cap extreme values at lower/upper thresholds)', 'Truncate (Remove rows falling outside thresholds)'], 
+                                    value='Winsorize (Cap extreme values at lower/upper thresholds)'
+                                ).classes('w-full')
+                                
+                                ui.label('Note: Winsorization caps outliers at fixed thresholds without reducing sample size (N).').classes('text-xs text-slate-400 italic my-1')
+                                ui.button('Apply Outlier Filter', on_click=process_outliers).classes('w-full bg-amber-600 rounded-xl mt-2')
 
-               # ------------------------------------------
+                # ------------------------------------------
                 # STEP 2: ALGORITHMS & PARAMS
                 # ------------------------------------------
                 with ui.tab_panel('t_algo'):
@@ -351,13 +335,12 @@ def main_page():
                                 on_change=refresh_algo_param_view
                             ).classes('w-1/3 rounded-xl')
                             
-                            # 🔄 FIXED: Target change automatically updates both selection values
                             state.main_target_select = ui.select(
                                 [], 
                                 label='Target Variable (Y)', 
                                 on_change=lambda e: [
-                                    state.cont_features_select.set_value([c for c in state.cont_features_select.value if c != e.value]),
-                                    state.dummy_features_select.set_value([c for c in state.dummy_features_select.value if c != e.value])
+                                    state.cont_features_select.set_value([c for c in state.cont_features_select.value if c != e.value]) if hasattr(state, 'cont_features_select') else None,
+                                    state.dummy_features_select.set_value([c for c in state.dummy_features_select.value if c != e.value]) if hasattr(state, 'dummy_features_select') else None
                                 ]
                             ).classes('w-1/3 rounded-xl')
                         
@@ -365,97 +348,79 @@ def main_page():
                         
                         ui.label('Feature Selection (Predictors X)').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
                         
-                        # Split columns view for clean feature typing
                         with ui.row().classes('w-full gap-4 mt-2 no-wrap'):
-    
-                          # 📉 LIST 1: CONTINUOUS VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Continuous Features (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
-                                
                                 with ui.expansion('Select Continuous Variables', icon='analytics').classes('w-full rounded-xl border border-slate-800 bg-slate-950'):
-                                    # ON ENREGISTRE LA ZONE DE SCROLL DANS LE STATE POUR POUVOIR LA REMPLIR EN PYTHON
                                     state.cont_scroll_area = ui.scroll_area().classes('h-60 p-2')
                                     with state.cont_scroll_area:
                                         state.cont_checkboxes = {}
 
-                            # 🏁 LIST 2: DUMMY / CATEGORICAL VARIABLES
                             with ui.column().classes('w-1/2'):
                                 ui.label('Dummy Variables (X)').classes('text-xs uppercase font-bold text-slate-400 mb-1')
-                                
                                 with ui.expansion('Select Dummy Variables', icon='tune').classes('w-full rounded-xl border border-slate-800 bg-slate-950'):
-                                    # IDEM ICI POUR LES DUMMIES
                                     state.dummy_scroll_area = ui.scroll_area().classes('h-60 p-2')
                                     with state.dummy_scroll_area:
                                         state.dummy_checkboxes = {}
-                        # ------------------------------------------
-                        # PIPELINE EXECUTION & ACTION BUTTONS BAR
-                        # ------------------------------------------
+
                         ui.label('Execution Controls').classes('text-md uppercase tracking-wider font-bold text-slate-400 mt-6 mb-2')
                         
-                        # Row container holding the Run button, loading status label, and Cancel button
                         with ui.row().classes('w-full items-center bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 gap-4 mt-2'):
-                            
-                            # 🚀 THE MAIN RUN BUTTON
                             state.btn_run = ui.button(
                                 '► Run Model Pipeline', 
                                 on_click=trigger_pipeline_execution
                             ).classes('bg-emerald-600 hover:bg-emerald-700 text-white font-black text-md px-6 py-2 rounded-xl shadow-lg shadow-emerald-500/10 transition-all')
                             
-                            # ⏳ PIPELINE RUNTIME LOGICAL MONITOR STATUS
                             state.algo_status_lbl = ui.label('System Ready. Waiting for execution...').classes('text-sm text-slate-400 font-mono flex-grow italic')
                             
-                            # 🛑 THE EMERGENCY CANCELLATION BUTTON
                             state.btn_stop = ui.button(
                                 'Stop', 
                                 on_click=lambda: ui.notify('Aborting calculations...', type='warning')
                             ).classes('bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white rounded-xl font-bold px-4 transition-all')
                             
-                            # Disable stop button by default until a thread runs
                             state.btn_stop.disable()
-                
+
                 # ------------------------------------------
-                # ETAPE 3 : COMPARE RESULTS
+                # STEP 3 : COMPARE RESULTS
                 # ------------------------------------------
                 with ui.tab_panel('t_compare'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                        ui.label('Global comparative benchmark').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
-                        
+                        ui.label('Global Comparative Benchmark').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
                         
                         state.compare_table_ui = ui.table(
                             columns=[
                                 {'name': 'run', 'label': 'Run ID', 'field': 'run', 'align': 'center'},
-                                {'name': 'algo', 'label': 'Algorithme', 'field': 'algo', 'align': 'center'},
+                                {'name': 'algo', 'label': 'Algorithm', 'field': 'algo', 'align': 'center'},
                                 {'name': 'r2_tr', 'label': 'R² Train', 'field': 'r2_tr', 'align': 'center'},
                                 {'name': 'mape_tr', 'label': 'MAPE Train', 'field': 'mape_tr', 'align': 'center'},
                                 {'name': 'r2_te', 'label': 'R² Test', 'field': 'r2_te', 'align': 'center'},
                                 {'name': 'rmse_te', 'label': 'RMSE Test', 'field': 'rmse_te', 'align': 'center'},
                                 {'name': 'mape_te', 'label': 'MAPE Test', 'field': 'mape_te', 'align': 'center'},
-                                {'name': 'co2', 'label': 'Carbon (kgCO2)', 'field': 'co2', 'align': 'center'},
+                                {'name': 'co2', 'label': 'Carbon (kgCO2eq)', 'field': 'co2', 'align': 'center'},
                             ], rows=[]
                         ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800')
                         
                         with ui.row().classes('w-full justify-between mt-6'):
                             ui.button('Clear Table', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
-                            ui.button('Export Comparaison CSV', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
+                            ui.button('Export Comparison CSV', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
 
                 # ------------------------------------------
-                # ETAPE 4 : PREDICT (INFERENCE)
+                # STEP 4 : PREDICT (INFERENCE)
                 # ------------------------------------------
                 with ui.tab_panel('t_predict'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                        ui.label('Prediction on new dataset').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
+                        ui.label('Prediction on New Dataset').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
                         
                         with ui.row().classes('w-full gap-6'):
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('1. Load New Dataset').classes('text-sm font-bold text-slate-300 mb-2')
-                                
                                 ui.upload(label='Browse New Dataset', on_upload=import_predict_dataset_from_event).classes('w-full rounded-xl')
                                 state.predict_file_lbl = ui.label('No prediction file loaded').classes('text-slate-400 font-mono text-xs mt-2')
                             
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('2. Select Trained Model').classes('text-sm font-bold text-slate-300 mb-2')
                                 state.predict_run_select = ui.select([], label='Choose a model').classes('w-full rounded-xl')
-                                ui.button('Apply', on_click=sync_predict_runs).classes('w-full bg-slate-800 rounded-xl text-xs mt-2')
+                                ui.button('Apply Model', on_click=sync_predict_runs).classes('w-full bg-slate-800 rounded-xl text-xs mt-2')
 
                         with ui.row().classes('w-full justify-between items-center mt-6 border-t border-slate-800 pt-4'):
                             with ui.row().classes('gap-3'):
@@ -466,7 +431,7 @@ def main_page():
         # LOGS & DOCS
         with ui.tab_panel('logs'):
             with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
-                ui.label('Journal d\'Activité Serveur').classes('text-lg font-bold text-emerald-400 mb-4')
+                ui.label('System Activity Log').classes('text-lg font-bold text-emerald-400 mb-4')
                 state.logs_area = ui.html().classes('font-mono text-xs bg-black p-4 rounded-xl w-full h-96 overflow-y-scroll text-green-400 border border-slate-800')
                 state.logs_area.content = "<br>".join(state.logs)
 
@@ -476,6 +441,38 @@ def main_page():
                 ui.markdown("# EcoRETINA ML Workbench - User Guide")
 
     refresh_algo_param_view()
+    
+    # POINT 1: DYNAMIC MOVING STAR ANIMATION FOR COMPARATIVE BENCHMARK
+    def animate_moving_star():
+        if not state.compare_table_ui.rows:
+            return
+            
+        star_icon = "⭐" if state.star_phase % 2 == 0 else "★"
+        state.star_phase += 1
+        
+        # Find best Test R2 index
+        best_r2 = -float('inf')
+        best_row_idx = -1
+        
+        for idx, row in enumerate(state.compare_table_ui.rows):
+            try:
+                r2_val = float(str(row['r2_te']).replace('⭐', '').replace('★', '').strip())
+                if r2_val > best_r2:
+                    best_r2 = r2_val
+                    best_row_idx = idx
+            except ValueError:
+                pass
+                
+        if best_row_idx != -1:
+            for idx, row in enumerate(state.compare_table_ui.rows):
+                clean_r2 = str(row['r2_te']).replace('⭐', '').replace('★', '').strip()
+                if idx == best_row_idx:
+                    row['r2_te'] = f"{clean_r2} {star_icon}"
+                else:
+                    row['r2_te'] = clean_r2
+            state.compare_table_ui.update()
+
+    ui.timer(0.7, animate_moving_star)
 
 # ==========================================
 # 4. GESTION DU PIPELINE DE LECTURE BINAIRE
@@ -487,10 +484,10 @@ async def import_main_dataset_from_event(e):
         state.df = await run.io_bound(_parse_csv_bytes, raw_bytes)
 
         state.save_state("Import dataset")
-        state.log(f"Base chargée avec succès ({len(state.df)} lignes, {len(state.df.columns)} variables).")
+        state.log(f"Dataset successfully loaded ({len(state.df)} rows, {len(state.df.columns)} variables).")
         sync_all_comboboxes()
     except Exception as ex:
-        state.log(f"Échec de chargement : {str(ex)}")
+        state.log(f"Dataset import failed: {str(ex)}")
         print(traceback.format_exc())
 
 async def import_predict_dataset_from_event(e):
@@ -499,23 +496,11 @@ async def import_predict_dataset_from_event(e):
         raw_bytes = await file_obj.read()
         state.df_predict = await run.io_bound(_parse_csv_bytes, raw_bytes)
 
-        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
-        state.log("Base d'inférence chargée avec succès.")
+        state.predict_file_lbl.text = f"Inference dataset validated ({len(state.df_predict)} rows)"
+        state.log("Inference dataset loaded successfully.")
     except Exception as ex:
-        ui.notify(f"Erreur d'importation : {str(ex)}")
-        state.log(f"Échec de chargement (inférence) : {str(ex)}")
-        
-async def import_predict_dataset_from_event(e):
-    try:
-        file_obj = e.file
-        raw_bytes = await run.io_bound(file_obj.read)
-        state.df_predict = await run.io_bound(_parse_csv_bytes, raw_bytes)
-
-        state.predict_file_lbl.text = f"Fichier inférence validé ({len(state.df_predict)} lignes)"
-        state.log("Base d'inférence chargée avec succès.")
-    except Exception as ex:
-        ui.notify(f"Erreur d'importation : {str(ex)}")
-        state.log(f"Échec de chargement (inférence) : {str(ex)}")
+        ui.notify(f"Import error: {str(ex)}", type='negative')
+        state.log(f"Failed to load inference dataset: {str(ex)}")
 
 def _parse_csv_bytes(raw_bytes):
     try:
@@ -533,8 +518,9 @@ def _parse_csv_bytes(raw_bytes):
     df = pd.read_csv(StringIO(text_data), sep=sep)
     df.columns = [str(c).strip() for c in df.columns]
     return df
+
 # ==========================================
-# 5. LOGIQUE SECONDAIRE DE NETTOYAGE
+# 5. LOGIQUE SECONDAIRE ET UTILITIES
 # ==========================================
 
 def toggle_split_view(strategy):
@@ -545,12 +531,12 @@ def toggle_split_view(strategy):
     else:
         state.split_container_ui.add_class('hidden')
         state.kfold_container_ui.remove_class('hidden')
+
 def sync_all_comboboxes():
     if state.df is None: return
     cols = [str(c) for c in state.df.columns]
     num_cols = [str(c) for c in state.df.select_dtypes(include=[np.number]).columns]
     
-    # 1. Mise à jour du sélecteur d'outliers et de la Target Variable
     state.outlier_select.options = num_cols
     if num_cols: state.outlier_select.value = num_cols[0]
     state.outlier_select.update()
@@ -559,34 +545,23 @@ def sync_all_comboboxes():
     if cols: state.main_target_select.value = cols[0]
     state.main_target_select.update()
     
-    # 2. Séparation et génération dynamique des 200 cases à cocher (X)
     target = state.main_target_select.value
     suggested_cont = [c for c in num_cols if c != target and state.df[c].nunique() > 2]
     suggested_dummy = [c for c in cols if c != target and (c not in suggested_cont)]
     
-    # Remplissage de la zone de défilement des variables Continues
     state.cont_scroll_area.clear()
     state.cont_checkboxes = {}
     with state.cont_scroll_area:
         for col in cols:
-            # On coche par défaut si la variable fait partie des variables continues suggérées
             is_checked = col in suggested_cont
             state.cont_checkboxes[col] = ui.checkbox(col, value=is_checked).classes('text-xs text-slate-300 block')
             
-    # Remplissage de la zone de défilement des variables Dummies
     state.dummy_scroll_area.clear()
     state.dummy_checkboxes = {}
     with state.dummy_scroll_area:
         for col in cols:
-            # On coche par défaut si la variable fait partie des variables dummies suggérées
             is_checked = col in suggested_dummy
             state.dummy_checkboxes[col] = ui.checkbox(col, value=is_checked).classes('text-xs text-slate-300 block')
-
-def update_cat_reference(e):
-    if state.df is None or not e.value: return
-    instances = [str(x) for x in state.df[e.value].dropna().unique()]
-    state.cat_ref_select.options = instances
-    if instances: state.cat_ref_select.value = instances[0]
 
 def on_outlier_variable_select(e):
     if state.df is None or not e.value: 
@@ -594,27 +569,23 @@ def on_outlier_variable_select(e):
         
     col = e.value
     try:
-        # Compute Pandas summary metrics
         stats_desc = state.df[col].describe()
         
-        # Build the structured summary report inside a custom Monospace template
         stats_html = (
             f"<div class='font-mono text-xs text-emerald-400 bg-black/40 p-3 rounded-xl border border-slate-800/80 leading-relaxed'>"
             f"<b>📊 DESCRIPTIVE STATISTICS FOR '{col.upper()}'</b><br>"
             f"--------------------------------------------------<br>"
-            f"  Count    : {int(stats_desc.get('count', 0)):<12} |   Min      : {stats_desc.get('min', 0):.4f}<br>"
-            f"  Mean     : {stats_desc.get('mean', 0):<12.4f} |   25% (Q1) : {stats_desc.get('25%', 0):.4f}<br>"
-            f"  Std Dev  : {stats_desc.get('std', 0):<12.4f} |   50% (Med): {stats_desc.get('50%', 0):.4f}<br>"
-            f"  Variance : {state.df[col].var():<12.4f} |   75% (Q3) : {stats_desc.get('75%', 0):.4f}<br>"
-            f"  Skewness : {state.df[col].skew():<12.4f} |   Max      : {stats_desc.get('max', 0):.4f}"
+            f"  Count    : {int(stats_desc.get('count', 0)):<12} |    Min      : {stats_desc.get('min', 0):.4f}<br>"
+            f"  Mean     : {stats_desc.get('mean', 0):<12.4f} |    25% (Q1) : {stats_desc.get('25%', 0):.4f}<br>"
+            f"  Std Dev  : {stats_desc.get('std', 0):<12.4f} |    50% (Med): {stats_desc.get('50%', 0):.4f}<br>"
+            f"  Variance : {state.df[col].var():<12.4f} |    75% (Q3) : {stats_desc.get('75%', 0):.4f}<br>"
+            f"  Skewness : {state.df[col].skew():<12.4f} |    Max      : {stats_desc.get('max', 0):.4f}"
             f"</div>"
         )
         
-        # Render the updated component directly within the UI
         state.outlier_stats_area.content = stats_html
         state.outlier_stats_area.update()
         
-        # Set dynamic inputs helper placeholders
         state.outlier_min.placeholder = f"Min: {stats_desc.get('min', 0):.2f}"
         state.outlier_max.placeholder = f"Max: {stats_desc.get('max', 0):.2f}"
         state.outlier_min.update()
@@ -638,14 +609,11 @@ def process_outliers():
     state.save_state(f"Outliers on {col}")
     action_type = state.outlier_action.value
     
-    # --- CASE 1: CLIP VALUES ---
-    if 'Clip' in action_type:
+    if 'Winsorize' in action_type:
         mn = float(raw_min) if raw_min is not None else float(state.df[col].min())
         mx = float(raw_max) if raw_max is not None else float(state.df[col].max())
         state.df[col] = state.df[col].clip(lower=mn, upper=mx)
-        state.log(f"Outlier filter (Clip) applied on '{col}' [{mn}, {mx}].")
-        
-    # --- CASE 2: DROP ROWS ---
+        state.log(f"Outlier filter (Winsorize) applied on '{col}' [{mn}, {mx}].")
     else:
         initial_len = len(state.df)
         if raw_min is not None:
@@ -654,77 +622,84 @@ def process_outliers():
             state.df = state.df[state.df[col] <= float(raw_max)]
             
         dropped_rows = initial_len - len(state.df)
-        state.log(f"Outlier filter (Drop) applied on '{col}'. {dropped_rows} rows removed.")
+        state.log(f"Outlier filter (Truncate) applied on '{col}'. {dropped_rows} rows removed.")
         
     sync_all_comboboxes()
 
-def run_cat_transformation(action):
-    if state.df is None or not state.cat_select.value: return
-    col = state.cat_select.value
-    state.save_state(f"Cat transform {action} sur {col}")
-    
-    if action == 'drop':
-        state.df.drop(columns=[col], inplace=True)
-    else:
-        ref = state.cat_ref_select.value
-        dummies = pd.get_dummies(state.df[col], prefix=col).astype(int)
-        if f"{col}_{ref}" in dummies.columns:
-            dummies.drop(columns=[f"{col}_{ref}"], inplace=True)
-        state.df = pd.concat([state.df.drop(columns=[col]), dummies], axis=1)
-    state.log(f"Transformation de la variable quali '{col}' opérée.")
-    sync_all_comboboxes()
-
-def run_scaling_process():
-    if state.df is None: return
-    scope = state.scale_scope.value
-    method = state.scale_method.value
-    target = state.main_target_select.value
-    
-    state.save_state(f"Scale {method}")
-    scaler = StandardScaler() if "Standard" in method else MinMaxScaler()
-    num_cols = state.df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    try:
-        if scope == "Target Variable ONLY":
-            state.df[[target]] = scaler.fit_transform(state.df[[target]])
-        elif scope == "All Predictors":
-            feats = [c for c in num_cols if c != target]
-            state.df[feats] = scaler.fit_transform(state.df[feats])
-        else:
-            state.df[num_cols] = scaler.fit_transform(state.df[num_cols])
-        state.log(f"Mise à l'échelle accomplie ({method}).")
-    except Exception as ex:
-        state.log(f"Erreur Scaling : {str(ex)}")
-
+# POINT 3: FULL DESCRIPTIVE STATS + DISTRIBUTION CHARTS + TRANSLATED CLOSE BUTTON
 def view_main_data():
-    if state.df is None: return ui.notify("Aucune table chargée")
+    if state.df is None: return ui.notify("No dataset loaded!", type='warning')
+    
     with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white p-4'):
-        ui.label('Aperçu du Dataset principal (Top 50)').classes('text-md font-bold text-emerald-400')
+        ui.label('Dataset Preview, Descriptive Statistics & Distributions').classes('text-md font-bold text-emerald-400')
         
-        # Nettoyage des lignes pour éviter les conflits d'objets complexes non-sériatrisables
-        clean_rows = [{str(k): str(v) for k, v in record.items()} for record in state.df.head(50).to_dict('records')]
-        
-        ui.table(
-            columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in state.df.columns],
-            rows=clean_rows
-        ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
-        ui.button('Fermer', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2')
+        with ui.tabs().classes('w-full') as view_tabs:
+            t_prev = ui.tab('t_preview', label='Preview (Top 50)')
+            t_stats = ui.tab('t_stats', label='Descriptive Statistics')
+            t_charts = ui.tab('t_charts', label='Distribution Plots')
+            
+        with ui.tab_panels(view_tabs, value='t_preview').classes('w-full h-full bg-transparent'):
+            with ui.tab_panel('t_preview'):
+                clean_rows = [{str(k): str(v) for k, v in record.items()} for record in state.df.head(50).to_dict('records')]
+                ui.table(
+                    columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in state.df.columns],
+                    rows=clean_rows
+                ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+                
+            with ui.tab_panel('t_stats'):
+                num_df = state.df.select_dtypes(include=[np.number])
+                if not num_df.empty:
+                    stats_df = num_df.describe().T[['mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
+                    stats_df.reset_index(inplace=True)
+                    stats_df.rename(columns={'index': 'Variable', '25%': 'Q1 (25%)', '50%': 'Median', '75%': 'Q3 (75%)'}, inplace=True)
+                    stats_rows = stats_df.to_dict('records')
+                    ui.table(
+                        columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in stats_df.columns],
+                        rows=stats_rows
+                    ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+                else:
+                    ui.label('No numeric variables found for descriptive statistics.').classes('text-slate-400')
+                    
+            with ui.tab_panel('t_charts'):
+                num_df = state.df.select_dtypes(include=[np.number])
+                if not num_df.empty:
+                    num_vars = min(6, len(num_df.columns))
+                    fig, axes = plt.subplots(2, 3, figsize=(10, 4), facecolor='#0f172a')
+                    axes = axes.flatten()
+                    for i, col in enumerate(num_df.columns[:num_vars]):
+                        axes[i].hist(num_df[col].dropna(), bins=20, color='#38bdf8', edgecolor='white', alpha=0.8)
+                        axes[i].set_title(col, color='white', fontsize=9)
+                        axes[i].set_facecolor('#1e293b')
+                        axes[i].tick_params(colors='white', labelsize=7)
+                    for j in range(i + 1, 6):
+                        fig.delaxes(axes[j])
+                    fig.tight_layout()
+                    
+                    buf = BytesIO()
+                    plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
+                    buf.seek(0)
+                    img_b64 = base64.b64encode(buf.read()).decode('utf-8')
+                    plt.close(fig)
+                    ui.html(f'<div class="flex justify-center"><img src="data:image/png;base64,{img_b64}"/></div>')
+
+        ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2')
     dialog.open()
 
+# POINT 4: SINGLE-STEP UNDO/REDO REVERSALS
 def apply_undo():
     if state.history:
         act, prev = state.history.pop()
-        state.future.append((act, state.df.copy()))
-        state.df = prev
-        state.log(f"[UNDO] Annulation de : {act}")
+        state.future.append((act, state.df.copy(deep=True)))
+        state.df = prev.copy(deep=True)
+        state.log(f"[UNDO] Reverted: {act}")
         sync_all_comboboxes()
 
 def apply_redo():
     if state.future:
         act, nxt = state.future.pop()
-        state.history.append((act, state.df.copy()))
-        state.df = nxt
-        state.log(f"[REDO] Rétablissement de : {act}")
+        state.history.append((act, state.df.copy(deep=True)))
+        state.df = nxt.copy(deep=True)
+        state.log(f"[REDO] Restored: {act}")
         sync_all_comboboxes()
 
 def refresh_algo_param_view():
@@ -732,7 +707,6 @@ def refresh_algo_param_view():
     state.param_options_frame.clear()
     
     with state.param_options_frame:
-        # --- 1. HYPERPARAMETERS FOR ECORETINA ---
         if algo == 'EcoRETINA':
             state.eco_loss = ui.select(['mse', 'mae', 'MAPE', 'AIC', 'BIC'], value='mse', label='Loss Function').classes('w-32 rounded-xl')
             state.eco_reg_type = ui.select(['linear', 'logit', 'probit'], value='linear', label='Regression Type').classes('w-32 rounded-xl')
@@ -743,7 +717,6 @@ def refresh_algo_param_view():
             state.eco_chunk_size = ui.number(label='Chunk Size', value=500).classes('w-24 rounded-xl')
             state.eco_seed = ui.number(label='Seed', value=8).classes('w-20 rounded-xl')
             
-        # --- 2. HYPERPARAMETERS FOR STANDARD LINEAR MODELS ---
         elif algo in ['OLS', 'Lasso', 'Ridge', 'ElasticNet']:
             state.ols_fit_intercept = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-32 rounded-xl')
             if algo != 'OLS':
@@ -756,25 +729,25 @@ def refresh_algo_param_view():
             if algo == 'ElasticNet':
                 state.en_l1_ratio = ui.number(label='L1 Ratio', value=0.5, format='%.2f').classes('w-24 rounded-xl')
 
-        # --- 3. HYPERPARAMETERS FOR XGBOOST ---
+        # POINT 5: FIXED XGBOOST PARAMETER EXTRACTION (xgb_gamma)
         elif algo == 'XGBoost':
             state.xgb_n = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
             state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-24 rounded-xl')
             state.xgb_lr = ui.number(label='Learning Rate', value=0.1, format='%.2f').classes('w-24 rounded-xl')
             state.xgb_subsample = ui.number(label='Subsample', value=1.0, format='%.2f').classes('w-24 rounded-xl')
+            state.xgb_gamma = ui.number(label='Gamma', value=0.0, format='%.2f').classes('w-24 rounded-xl')
 
-        # --- 4. HYPERPARAMETERS FOR RANDOM FOREST ---
         elif algo == 'Random Forest':
             state.rf_n_estimators = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
             state.rf_max_depth = ui.number(label='Max Depth (0=None)', value=0).classes('w-28 rounded-xl')
             state.rf_min_split = ui.number(label='Min Split', value=2).classes('w-24 rounded-xl')
 
-        # --- 5. HYPERPARAMETERS FOR NEURAL NETWORK ---
         elif algo == 'Neural Network':
             state.nn_layers = ui.input(label='Hidden Layers', value='100,50').classes('w-32 rounded-xl')
             state.nn_activation = ui.select(['relu', 'tanh', 'logistic'], value='relu', label='Activation').classes('w-32 rounded-xl')
             state.nn_solver = ui.select(['adam', 'sgd'], value='adam', label='Solver').classes('w-32 rounded-xl')
             state.nn_max_iter = ui.number(label='Max Iterations', value=200).classes('w-28 rounded-xl')
+
 async def trigger_pipeline_execution():
     try:
         if state.df is None: 
@@ -783,25 +756,21 @@ async def trigger_pipeline_execution():
         target = state.main_target_select.value
         algo = state.algo_choice.value
         
-        # 🪄 Lecture dynamique des variables cochées par l'utilisateur
         chosen_cont = [col for col, cb in state.cont_checkboxes.items() if cb.value]
         chosen_dummy = [col for col, cb in state.dummy_checkboxes.items() if cb.value]
         
-        # Ensure target variable is not included by accident
         cont_features = [v for v in chosen_cont if v != target]
         dummy_features = [v for v in chosen_dummy if v != target]
         
-        # Verify that the user selected at least one feature across either category
         if not cont_features and not dummy_features: 
             return ui.notify("Please select at least one explanatory feature (Continuous or Dummy)!", type='warning')
 
-        # Update the UI state indicators
         state.algo_status_lbl.text = "Running pipeline calculations..."
         state.btn_run.disable()
         state.btn_stop.enable()
         state.algo_status_lbl.update()
     
-        # --- THREAD-SAFE PARAMETER EXTRACTION ---
+        # POINT 5: CORRECTED 'xgb_gamma' DICTIONARY KEY MAPPING
         config_args = {
             "algo": algo,
             "target_col": target,
@@ -828,7 +797,7 @@ async def trigger_pipeline_execution():
             'xgb_lr': float(getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value),
             'xgb_subsample': float(getattr(state, 'xgb_subsample', type('obj', (), {'value': 1.0})).value),
             'xgb_colsample': float(getattr(state, 'xgb_colsample', type('obj', (), {'value': 1.0})).value),
-            'xxx_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value),
+            'xgb_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value), # 👈 Corrected key
             'xgb_alpha': float(getattr(state, 'xgb_alpha', type('obj', (), {'value': 0.0})).value),
             'xgb_lambda': float(getattr(state, 'xgb_lambda', type('obj', (), {'value': 1.0})).value),
             
@@ -846,10 +815,8 @@ async def trigger_pipeline_execution():
             'nn_max_iter': int(getattr(state, 'nn_max_iter', type('obj', (), {'value': 200})).value),
         }
 
-        # 🔄 FIX 1: Combine both lists into a single flat list for standard sklearn / xgboost algos
         flat_selected_features = cont_features + dummy_features
 
-        # 🔄 FIX 2: Wrapped inside the try block to avoid silent background engine hangs
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, execute_ml_math_core, algo, target, flat_selected_features, config_args)
         
@@ -870,11 +837,11 @@ async def trigger_pipeline_execution():
     except Exception as ex:
         ui.notify(f"Pipeline initiation failed: {str(ex)}", type='negative')
         print(f"[CRITICAL ERROR] trigger_pipeline_execution crashed: {str(ex)}")
+        
+    # POINT 7: GUARANTEED UNLOCK TO PREVENT SYSTEM LOCKUP AFTER ERRORS
     finally:
-        # Re-enable button elements safely when done
         state.btn_run.enable()
         state.btn_stop.disable()
-    
 
 def execute_ml_math_core(algo, target, features, args):
     df_clean = state.df.dropna(subset=[target] + features).fillna(0)
@@ -888,7 +855,6 @@ def execute_ml_math_core(algo, target, features, args):
     model = None
     feature_names_final = features.copy()
     
-    # Extraction des booléens textuels
     fit_intercept_bool = True if str(args.get('fit_intercept', 'True')) == 'True' else False
     cross_dummy_bool = True if str(args.get('eco_cross_dummy', 'False')) == 'True' else False
 
@@ -960,15 +926,12 @@ def execute_ml_math_core(algo, target, features, args):
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'EcoRETINA':
-        # Intégration de la structure eco_retina si disponible
         if ECO_RETINA_AVAILABLE:
             model = EcoRETINA()
-            # Simulation/Passage identique à ta configuration originale de eco_retina.py
             model.fit(y=y_train, X=X_train, col_names=features, loss=args['eco_loss'], grid=args['eco_grid'], reg_type=args['eco_reg_type'], cross_dummy=cross_dummy_bool, max_reg=args['eco_max_reg'], chunk_size=args['eco_chunk_size'], seed=args['eco_seed'], cov_type=args['eco_cov_type'])
             y_train_pred = model.predict(X_train)
             y_test_pred = model.predict(X_test)
         else:
-            # Fallback de secours si eco_retina.py est absent du dépôt
             model = Ridge(alpha=0.1)
             model.fit(X_train, y_train)
             y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
@@ -988,44 +951,9 @@ def execute_ml_math_core(algo, target, features, args):
             'emissions': emissions
         }
     }
-def open_detailed_report():
-    algo = state.algo_choice.value
-    run_id = state.latest_run_by_algo.get(algo)
-    if not run_id: return ui.notify("Aucune analyse disponible pour cet algorithme !")
-    
-    run_data = state.run_history[run_id]
-    y_test = run_data['y_test']
-    y_test_pred = run_data['y_test_pred']
-    
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    fig.patch.set_facecolor('#0f172a')
-    
-    axes[0].scatter(y_test, y_test_pred, alpha=0.6, color='#38bdf8')
-    axes[0].plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color='#34d399', linestyle='--')
-    axes[0].set_title('Reals vs Predictions', color='white', fontsize=10)
-    axes[0].set_facecolor('#1e293b')
-    axes[0].tick_params(colors='white')
-    
-    residuals = y_test - y_test_pred
-    axes[1].hist(residuals, bins=15, color='#f87171', alpha=0.8)
-    axes[1].set_title('Residuals Split', color='white', fontsize=10)
-    axes[1].set_facecolor('#1e293b')
-    axes[1].tick_params(colors='white')
-    
-    buf = BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
-    buf.seek(0)
-    img_b64 = base64.b64encode(buf.read()).decode('utf-8')
-    plt.close(fig)
-    
-    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-4xl bg-slate-900 rounded-2xl text-white p-6 border border-slate-800'):
-        ui.label(f"Indicateurs Analytiques - {run_id}").classes('text-lg font-black text-emerald-400')
-        ui.html(f'<div class="flex justify-center mt-2 rounded-xl overflow-hidden border border-slate-800"><img src="data:image/png;base64,{img_b64}"/></div>')
-        ui.button('Fermer le rapport', on_click=dialog.close).classes('bg-slate-800 rounded-xl mt-4 self-end')
-    dialog.open()
 
 def export_comparison_matrix():
-    if not state.compare_table_ui.rows: return ui.notify("Aucune donnée disponible")
+    if not state.compare_table_ui.rows: return ui.notify("No comparison data available", type='warning')
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(['Run_ID', 'Algorithm', 'R2_Train', 'R2_Test', 'MAPE_Test', 'CO2_kg'])
@@ -1039,9 +967,9 @@ def sync_predict_runs():
     if runs: state.predict_run_select.value = runs[-1]
 
 def execute_inference_process():
-    if state.df_predict is None: return ui.notify("Importez d'abord une base !")
+    if state.df_predict is None: return ui.notify("Please load an inference dataset first!", type='warning')
     run_id = state.predict_run_select.value
-    if not run_id: return ui.notify("Sélectionnez un modèle ajusté !")
+    if not run_id: return ui.notify("Please select a trained model!", type='warning')
     
     run_data = state.run_history[run_id]
     raw_feats = run_data['raw_features']
@@ -1055,19 +983,19 @@ def execute_inference_process():
         preds = model.predict(pd.DataFrame(X_new, columns=feature_names))
         pred_col = f"Predicted_{target_col}_{run_id}"
         state.df_predict[pred_col] = preds
-        ui.notify(f"Prédictions générées dans '{pred_col}' !")
+        ui.notify(f"Predictions generated in column '{pred_col}'!")
     except Exception as ex:
-        ui.notify(f"Erreur mathématique lors du calcul : {str(ex)}")
+        ui.notify(f"Inference calculation error: {str(ex)}", type='negative')
 
 def view_predict_data():
-    if state.df_predict is None: return ui.notify("Aucune base d'inférence")
+    if state.df_predict is None: return ui.notify("No prediction dataset loaded!", type='warning')
     with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white'):
-        ui.label('Vérification des Prédictions Appliquées').classes('text-md font-bold text-emerald-400')
+        ui.label('Predictions Overview').classes('text-md font-bold text-emerald-400')
         ui.table(
             columns=[{'name': c, 'label': c, 'field': c} for c in state.df_predict.columns],
             rows=state.df_predict.head(50).to_dict('records')
         ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
-        ui.button('Fermer', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end')
+        ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end')
     dialog.open()
 
 def export_predicted_csv():
