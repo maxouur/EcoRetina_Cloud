@@ -593,13 +593,9 @@ def execute_ml_math_core(df_input, algo, target, features, args):
             add_log=add_log_bool,
             add_relu=add_relu_bool
         )
-            y_train_pred = model.predict(X_train)
-            y_test_pred = model.predict(X_test)
-        else:
-            model = Ridge(alpha=0.1)
-            model.fit(X_train, y_train)
-            y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
-    
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+        
     return {
         'model': model, 'model_name': algo, 'target_col': target, 'raw_features': features, 'feature_names': feature_names_final,
         'y_test': y_test, 'y_test_pred': y_test_pred,
