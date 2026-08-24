@@ -213,18 +213,18 @@ def _parse_csv_bytes(raw_bytes):
 
 def execute_ml_math_core(df_input, algo, target, features, args):
     # 1. Nettoyage strict identique à la version interne
-    df_clean = df_input.dropna(subset=[target]).fillna(0)[cite: 1]
-    y = df_clean[target].values[cite: 1]
-    X_encoded = df_clean[features].values[cite: 1]
+    df_clean = df_input.dropna(subset=[target]).fillna(0)
+    y = df_clean[target].values
+    X_encoded = df_clean[features].values
 
     # 2. Ratio dynamique issu du slider
     split_ratio = float(args.get('split_ratio', 0.8))
     
     if split_ratio >= 1.0:
-        X_train, X_test, y_train, y_test = X_encoded, X_encoded, y, y[cite: 1]
+        X_train, X_test, y_train, y_test = X_encoded, X_encoded, y, y
     else:
         X_train, X_test, y_train, y_test = train_test_split(
-            X_encoded, y, train_size=split_ratio, random_state=42[cite: 1]
+            X_encoded, y, train_size=split_ratio, random_state=42
         )
 
     tracker = EmissionsTracker(tracking_mode='process', log_level='error')
@@ -237,81 +237,81 @@ def execute_ml_math_core(df_input, algo, target, features, args):
 
     if algo == 'OLS':
         if fit_intercept_bool:
-            X_train_fit = sm.add_constant(X_train, has_constant='add')[cite: 1]
-            X_test_fit = sm.add_constant(X_test, has_constant='add')[cite: 1]
-            feature_names_final = ['const'] + features[cite: 1]
+            X_train_fit = sm.add_constant(X_train, has_constant='add')
+            X_test_fit = sm.add_constant(X_test, has_constant='add')
+            feature_names_final = ['const'] + features
         else:
-            X_train_fit, X_test_fit = X_train, X_test[cite: 1]
+            X_train_fit, X_test_fit = X_train, X_test
         sm_res = sm.OLS(y_train, pd.DataFrame(X_train_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
-        model = OLSWrapper(sm_res)[cite: 1]
-        y_train_pred = sm_res.predict(pd.DataFrame(X_train_fit, columns=feature_names_final))[cite: 1]
-        y_test_pred = sm_res.predict(pd.DataFrame(X_test_fit, columns=feature_names_final))[cite: 1]
+        model = OLSWrapper(sm_res)
+        y_train_pred = sm_res.predict(pd.DataFrame(X_train_fit, columns=feature_names_final))
+        y_test_pred = sm_res.predict(pd.DataFrame(X_test_fit, columns=feature_names_final))
         
     elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
         if algo == 'Lasso':
-            model_pen = Lasso(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])[cite: 1]
+            model_pen = Lasso(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
         elif algo == 'Ridge':
-            model_pen = Ridge(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'], solver=args['ridge_solver'])[cite: 1]
+            model_pen = Ridge(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'], solver=args['ridge_solver'])
         else:
-            model_pen = ElasticNet(alpha=args['alpha'], l1_ratio=args['en_l1_ratio'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])[cite: 1]
+            model_pen = ElasticNet(alpha=args['alpha'], l1_ratio=args['en_l1_ratio'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
         
-        model_pen.fit(X_train, y_train)[cite: 1]
-        sel_idx = np.where(np.abs(model_pen.coef_) > 1e-5)[0][cite: 1]
-        if len(sel_idx) == 0: sel_idx = np.arange(X_train.shape[1])[cite: 1]
+        model_pen.fit(X_train, y_train)
+        sel_idx = np.where(np.abs(model_pen.coef_) > 1e-5)[0]
+        if len(sel_idx) == 0: sel_idx = np.arange(X_train.shape[1])
         
-        X_tr_sel, X_te_sel = X_train[:, sel_idx], X_test[:, sel_idx][cite: 1]
-        feature_names_final = [features[i] for i in sel_idx][cite: 1]
+        X_tr_sel, X_te_sel = X_train[:, sel_idx], X_test[:, sel_idx]
+        feature_names_final = [features[i] for i in sel_idx]
         
         if fit_intercept_bool:
-            X_tr_fit = sm.add_constant(X_tr_sel, has_constant='add')[cite: 1]
-            X_te_fit = sm.add_constant(X_te_sel, has_constant='add')[cite: 1]
-            feature_names_final = ['const'] + feature_names_final[cite: 1]
+            X_tr_fit = sm.add_constant(X_tr_sel, has_constant='add')
+            X_te_fit = sm.add_constant(X_te_sel, has_constant='add')
+            feature_names_final = ['const'] + feature_names_final
         else:
-            X_tr_fit, X_te_fit = X_tr_sel, X_te_sel[cite: 1]
+            X_tr_fit, X_te_fit = X_tr_sel, X_te_sel
             
-        sm_res = sm.OLS(y_train, pd.DataFrame(X_tr_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))[cite: 1]
-        model = OLSWrapper(sm_res)[cite: 1]
-        y_train_pred = sm_res.predict(pd.DataFrame(X_tr_fit, columns=feature_names_final))[cite: 1]
-        y_test_pred = sm_res.predict(pd.DataFrame(X_te_fit, columns=feature_names_final))[cite: 1]
+        sm_res = sm.OLS(y_train, pd.DataFrame(X_tr_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
+        model = OLSWrapper(sm_res)
+        y_train_pred = sm_res.predict(pd.DataFrame(X_tr_fit, columns=feature_names_final))
+        y_test_pred = sm_res.predict(pd.DataFrame(X_te_fit, columns=feature_names_final))
         
     elif algo == 'XGBoost':
         model = xgb.XGBRegressor(
             n_estimators=args['xgb_n'], max_depth=args['xgb_depth'], learning_rate=args['xgb_lr'],
             subsample=args['xgb_subsample'], colsample_bytree=args['xgb_colsample'], gamma=args['xgb_gamma'],
-            reg_alpha=args['xgb_alpha'], reg_lambda=args['xgb_lambda'], random_state=42[cite: 1]
+            reg_alpha=args['xgb_alpha'], reg_lambda=args['xgb_lambda'], random_state=42
         )
-        model.fit(X_train, y_train)[cite: 1]
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)[cite: 1]
+        model.fit(X_train, y_train)
+        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'Random Forest':
         raw_depth = args.get('rf_max_depth', 12)
-        depth = None if (raw_depth is None or int(raw_depth) == 0) else int(raw_depth)[cite: 1]
-        max_f = None if str(args.get('rf_max_features', '1.0')) == '1.0' else args.get('rf_max_features')[cite: 1]
+        depth = None if (raw_depth is None or int(raw_depth) == 0) else int(raw_depth)
+        max_f = None if str(args.get('rf_max_features', '1.0')) == '1.0' else args.get('rf_max_features')
         model = RandomForestRegressor(
             n_estimators=int(args.get('rf_n_estimators', 100)),
             max_depth=depth,
-            min_samples_split=int(args.get('rf_split', 2)),[cite: 1]
-            min_samples_leaf=int(args.get('rf_leaf', 1)),[cite: 1]
+            min_samples_split=int(args.get('rf_split', 2)),
+            min_samples_leaf=int(args.get('rf_leaf', 1)),
             max_features=max_f,
             n_jobs=1,
-            random_state=42[cite: 1]
+            random_state=42
         )
-        model.fit(X_train, y_train)[cite: 1]
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)[cite: 1]
+        model.fit(X_train, y_train)
+        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'Neural Network':
-        layers = tuple(int(x.strip()) for x in str(args["nn_layers"]).split(','))[cite: 1]
+        layers = tuple(int(x.strip()) for x in str(args["nn_layers"]).split(','))
         model = MLPRegressor(
             hidden_layer_sizes=layers,
-            activation=args["nn_act"],[cite: 1]
-            solver=args["nn_sol"],[cite: 1]
-            alpha=float(args["nn_alpha"]),[cite: 1]
-            learning_rate_init=float(args["nn_lr"]),[cite: 1]
-            max_iter=int(args["nn_iter"]),[cite: 1]
-            random_state=42[cite: 1]
+            activation=args["nn_act"],
+            solver=args["nn_sol"],
+            alpha=float(args["nn_alpha"]),
+            learning_rate_init=float(args["nn_lr"]),
+            max_iter=int(args["nn_iter"]),
+            random_state=42
         )
-        model.fit(X_train, y_train)[cite: 1]
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)[cite: 1]
+        model.fit(X_train, y_train)
+        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'EcoRETINA':
         if ECO_RETINA_AVAILABLE:
@@ -331,11 +331,11 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         'model': model, 'model_name': algo, 'target_col': target, 'raw_features': features, 'feature_names': feature_names_final,
         'y_test': y_test, 'y_test_pred': y_test_pred,
         'metrics': {
-            'r2_tr': r2_score(y_train, y_train_pred),[cite: 1]
-            'mape_tr': mean_absolute_percentage_error(y_train, y_train_pred) * 100,[cite: 1]
-            'r2_te': r2_score(y_test, y_test_pred),[cite: 1]
-            'rmse_te': np.sqrt(mean_squared_error(y_test, y_test_pred)),[cite: 1]
-            'mape_te': mean_absolute_percentage_error(y_test, y_test_pred) * 100,[cite: 1]
+            'r2_tr': r2_score(y_train, y_train_pred),
+            'mape_tr': mean_absolute_percentage_error(y_train, y_train_pred) * 100,
+            'r2_te': r2_score(y_test, y_test_pred),
+            'rmse_te': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+            'mape_te': mean_absolute_percentage_error(y_test, y_test_pred) * 100,
             'emissions': emissions
         }
     }
