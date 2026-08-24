@@ -469,8 +469,8 @@ def execute_ml_math_core(df_input, algo, target, features, args):
             X_encoded, y, train_size=split_ratio, random_state=42
         )
 
-    tracker = EmissionsTracker(tracking_mode='process', log_level='error')
-    tracker.start()
+    # tracker = EmissionsTracker(tracking_mode='process', log_level='error')
+    # tracker.start()
     
     model = None
     feature_names_final = features.copy()
@@ -610,6 +610,11 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         y_train_pred = model.predict(X_train)
         y_test_pred = model.predict(X_test)
         
+
+    # emissions = tracker.stop()
+
+
+    
     return {
         'model': model, 'model_name': algo, 'target_col': target, 'raw_features': features, 'feature_names': feature_names_final,
         'y_test': y_test, 'y_test_pred': y_test_pred,
