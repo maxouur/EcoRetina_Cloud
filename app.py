@@ -281,6 +281,8 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # 1. ARCHITECTURE DES DONNÉES ET ÉTAT LOCAL
 # ==========================================
+import gc
+
 class Workspace:
     def __init__(self):
         self.df = None
@@ -304,14 +306,17 @@ class Workspace:
         self.logs.append(log_line)
         ui.notify(message)
         if hasattr(self, 'logs_area') and self.logs_area:
-            self.logs_area.content = "<br>".join(self.logs)
+            self.logs_area.content = "<br>".join(self.logs[-50:])  # Garde seulement les 50 derniers logs
 
     def save_state(self, action_name):
         if self.df is not None:
+            # Réduit à 3 étapes de Undo pour économiser la RAM
             self.history.append((action_name, self.df.copy(deep=True)))
-            if len(self.history) > 20:
+            if len(self.history) > 3:
                 self.history.pop(0)
             self.future.clear()
+            gc.collect()
+
 
 class OLSWrapper:
     def __init__(self, res): 
@@ -442,23 +447,21 @@ def _parse_csv_bytes(raw_bytes):
     return df
 
 def execute_ml_math_core(df_input, algo, target, features, args):
+    import gc
     emissions = np.nan
     
-    # 1. Sélection et conversion forcée de toutes les colonnes en numérique pur
-    df_subset = df_input[[target] + list(features)].copy()
-    for col in df_subset.columns:
-        df_subset[col] = pd.to_numeric(df_subset[col], errors='coerce')
-    
-    # 2. Nettoyage des NaN et typage strict en float32 ou float64 C-contiguous
+    # 1. Sélection stricte en float32 (2x plus léger que float64)
+    df_subset = df_input[[target] + list(features)].apply(pd.to_numeric, errors='coerce')
     df_clean = df_subset.dropna(subset=[target]).fillna(0)
-    
-    # 3. Extraction avec dtype garanti (float32 ou float64, JAMAIS object)
-    y = np.ascontiguousarray(df_clean[target].values, dtype=np.float64)
-    X_encoded = np.ascontiguousarray(df_clean[features].values, dtype=np.float64)
+    del df_subset
 
-    # Libération mémoire
-    del df_subset, df_clean
-    import gc
+    # Garde-fou automatique sur Cloud : max 4000 lignes pour EcoRETINA
+    if algo == 'EcoRETINA' and len(df_clean) > 4000:
+        df_clean = df_clean.sample(n=4000, random_state=42)
+
+    y = np.ascontiguousarray(df_clean[target].values, dtype=np.float32)
+    X_encoded = np.ascontiguousarray(df_clean[features].values, dtype=np.float32)
+    del df_clean
     gc.collect()
 
     split_ratio = float(args.get('split_ratio', 0.8))
@@ -468,40 +471,43 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         X_train, X_test, y_train, y_test = train_test_split(
             X_encoded, y, train_size=split_ratio, random_state=42
         )
+    del X_encoded
+    gc.collect()
 
-    # tracker = EmissionsTracker(tracking_mode='process', log_level='error')
-    # tracker.start()
-    
     model = None
-    feature_names_final = features.copy()
+    feature_names_final = list(features)
     fit_intercept_bool = True if str(args.get('fit_intercept', 'True')) == 'True' else False
-    cross_dummy_bool = True if str(args.get('eco_cross_dummy', 'False')) == 'True' else False
 
     if algo == 'OLS':
         if fit_intercept_bool:
             X_train_fit = sm.add_constant(X_train, has_constant='add')
             X_test_fit = sm.add_constant(X_test, has_constant='add')
-            feature_names_final = ['const'] + features
+            feature_names_final = ['const'] + list(features)
         else:
             X_train_fit, X_test_fit = X_train, X_test
-        sm_res = sm.OLS(y_train, pd.DataFrame(X_train_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
+        
+        # Passage direct de matrices NumPy (évite la duplication DataFrame)
+        sm_res = sm.OLS(y_train, X_train_fit).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
         model = OLSWrapper(sm_res)
-        y_train_pred = sm_res.predict(pd.DataFrame(X_train_fit, columns=feature_names_final))
-        y_test_pred = sm_res.predict(pd.DataFrame(X_test_fit, columns=feature_names_final))
+        y_train_pred = sm_res.predict(X_train_fit)
+        y_test_pred = sm_res.predict(X_test_fit)
+        del X_train_fit, X_test_fit
         
     elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
         if algo == 'Lasso':
             model_pen = Lasso(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
         elif algo == 'Ridge':
-            model_pen = Ridge(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'], solver=args['ridge_solver'])
+            model_pen = Ridge(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'], solver=args.get('ridge_solver', 'auto'))
         else:
             model_pen = ElasticNet(alpha=args['alpha'], l1_ratio=args['en_l1_ratio'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
         
         model_pen.fit(X_train, y_train)
         sel_idx = np.where(np.abs(model_pen.coef_) > 1e-5)[0]
-        if len(sel_idx) == 0: sel_idx = np.arange(X_train.shape[1])
+        if len(sel_idx) == 0: 
+            sel_idx = np.arange(X_train.shape[1])
         
-        X_tr_sel, X_te_sel = X_train[:, sel_idx], X_test[:, sel_idx]
+        X_tr_sel = X_train[:, sel_idx]
+        X_te_sel = X_test[:, sel_idx]
         feature_names_final = [features[i] for i in sel_idx]
         
         if fit_intercept_bool:
@@ -511,74 +517,32 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         else:
             X_tr_fit, X_te_fit = X_tr_sel, X_te_sel
             
-        sm_res = sm.OLS(y_train, pd.DataFrame(X_tr_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
+        sm_res = sm.OLS(y_train, X_tr_fit).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
         model = OLSWrapper(sm_res)
-        y_train_pred = sm_res.predict(pd.DataFrame(X_tr_fit, columns=feature_names_final))
-        y_test_pred = sm_res.predict(pd.DataFrame(X_te_fit, columns=feature_names_final))
-        
-    elif algo == 'XGBoost':
-        model = xgb.XGBRegressor(
-            n_estimators=args['xgb_n'], max_depth=args['xgb_depth'], learning_rate=args['xgb_lr'],
-            subsample=args['xgb_subsample'], colsample_bytree=args['xgb_colsample'], gamma=args['xgb_gamma'],
-            reg_alpha=args['xgb_alpha'], reg_lambda=args['xgb_lambda'], random_state=42
-        )
-        model.fit(X_train, y_train)
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
-        
-    elif algo == 'Random Forest':
-        raw_depth = args.get('rf_max_depth', 12)
-        depth = None if (raw_depth is None or int(raw_depth) == 0) else int(raw_depth)
-        max_f = None if str(args.get('rf_max_features', '1.0')) == '1.0' else args.get('rf_max_features')
-        model = RandomForestRegressor(
-            n_estimators=int(args.get('rf_n_estimators', 100)),
-            max_depth=depth,
-            min_samples_split=int(args.get('rf_split', 2)),
-            min_samples_leaf=int(args.get('rf_leaf', 1)),
-            max_features=max_f,
-            n_jobs=1,
-            random_state=42
-        )
-        model.fit(X_train, y_train)
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
-        
-    elif algo == 'Neural Network':
-        layers = tuple(int(x.strip()) for x in str(args["nn_layers"]).split(','))
-        model = MLPRegressor(
-            hidden_layer_sizes=layers,
-            activation=args["nn_act"],
-            solver=args["nn_sol"],
-            alpha=float(args["nn_alpha"]),
-            learning_rate_init=float(args["nn_lr"]),
-            max_iter=int(args["nn_iter"]),
-            random_state=42
-        )
-        model.fit(X_train, y_train)
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
+        y_train_pred = sm_res.predict(X_tr_fit)
+        y_test_pred = sm_res.predict(X_te_fit)
+        del model_pen, X_tr_fit, X_te_fit
         
     elif algo == 'EcoRETINA':
         if not ECO_RETINA_AVAILABLE:
             raise ImportError("EcoRETINA V3 non disponible")
     
-        # 1. Extraction propre des exposants (ex: [-1.0, 0.0, 1.0, 2.0])
         raw_params = str(args.get('eco_params', '[-1.0, 0.0, 1.0]')).strip('[]')
         eco_params_list = [float(x.strip()) for x in raw_params.split(',') if x.strip()]
     
         cont_names = list(args.get('cont_names', []))
         dummy_names = list(args.get('dummy_names', []))
         
-        # 2. Construction STRICTE des indices continus et dummies
         cont_set = set(cont_names)
         dummy_set = set(dummy_names)
         
         con_cols_indices = [int(i) for i, f in enumerate(features) if f in cont_set]
         dummy_cols_indices = [int(i) for i, f in enumerate(features) if f in dummy_set]
         
-        # Si tout est vide, on force toutes les colonnes en continues par défaut
         if not con_cols_indices and not dummy_cols_indices:
             con_cols_indices = list(range(len(features)))
             dummy_cols_indices = []
     
-        # 3. Récupération des booléens d'activation
         cross_dummy_bool = True if str(args.get('eco_cross_dummy', 'False')).lower() in ['true', '1'] else False
         add_log_bool = True if str(args.get('eco_add_log', 'False')).lower() in ['true', '1'] else False
         add_relu_bool = True if str(args.get('eco_add_relu', 'False')).lower() in ['true', '1'] else False
@@ -587,18 +551,18 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         model.fit(
             y=y_train, 
             X=X_train, 
-            con_cols_indices=con_cols_indices,      # 👈 Permet les croisements continus (X1 * X2^gamma)
-            dummy_cols_indices=dummy_cols_indices,  # 👈 Permet les croisements dummy * continu
+            con_cols_indices=con_cols_indices,
+            dummy_cols_indices=dummy_cols_indices,
             col_names=features, 
             params=eco_params_list,
             loss=args.get('eco_loss', 'mse'), 
             grid=float(args.get('eco_grid', 0.005)), 
             reg_type=args.get('eco_reg_type', 'linear'), 
-            cross_dummy=cross_dummy_bool,           # 👈 Permet les croisements dummy * dummy
+            cross_dummy=cross_dummy_bool,
             max_r2=float(args.get('eco_max_r2', 0.99)),
-            max_instances=int(args.get('eco_max_instances', 100000)),
-            max_reg=int(args.get('eco_max_reg', 100)), 
-            chunk_size=int(args.get('eco_chunk_size', 500)), 
+            max_instances=int(args.get('eco_max_instances', 10000)), # 10 000 max sur Cloud
+            max_reg=int(args.get('eco_max_reg', 30)),               # 30 max pour préserver la RAM
+            chunk_size=int(args.get('eco_chunk_size', 50)),         # 50 max par lot
             model_step=int(args.get('eco_model_step', 1)),
             seed=int(args.get('eco_seed', 8)), 
             cov_type=args.get('eco_cov_type', 'nonrobust'),
@@ -609,21 +573,23 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         )
         y_train_pred = model.predict(X_train)
         y_test_pred = model.predict(X_test)
-        
 
-    # emissions = tracker.stop()
+    gc.collect()
 
-
-    
     return {
-        'model': model, 'model_name': algo, 'target_col': target, 'raw_features': features, 'feature_names': feature_names_final,
-        'y_test': y_test, 'y_test_pred': y_test_pred,
+        'model': model, 
+        'model_name': algo, 
+        'target_col': target, 
+        'raw_features': features, 
+        'feature_names': feature_names_final,
+        'y_test': y_test.tolist() if hasattr(y_test, 'tolist') else y_test, 
+        'y_test_pred': y_test_pred.tolist() if hasattr(y_test_pred, 'tolist') else y_test_pred,
         'metrics': {
-            'r2_tr': r2_score(y_train, y_train_pred),
-            'mape_tr': mean_absolute_percentage_error(y_train, y_train_pred) * 100,
-            'r2_te': r2_score(y_test, y_test_pred),
-            'rmse_te': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-            'mape_te': mean_absolute_percentage_error(y_test, y_test_pred) * 100,
+            'r2_tr': float(r2_score(y_train, y_train_pred)),
+            'mape_tr': float(mean_absolute_percentage_error(y_train, y_train_pred) * 100),
+            'r2_te': float(r2_score(y_test, y_test_pred)),
+            'rmse_te': float(np.sqrt(mean_squared_error(y_test, y_test_pred))),
+            'mape_te': float(mean_absolute_percentage_error(y_test, y_test_pred) * 100),
             'emissions': emissions
         }
     }
@@ -729,10 +695,15 @@ def main_page():
         
                     loop = asyncio.get_event_loop()
                     res = await loop.run_in_executor(None, execute_ml_math_core, state.df, algo, target, flat_selected_features, config_args)
-                    
+                
                     run_id = f"Run_{time.strftime('%H%M%S')}"
                     state.run_history[run_id] = res
                     state.latest_run_by_algo[algo] = run_id
+                    
+                    # Évite d'accumuler plus de 5 runs en RAM
+                    if len(state.run_history) > 5:
+                        oldest = next(iter(state.run_history))
+                        del state.run_history[oldest]
                     
                     state.compare_table_ui.add_rows([{
                         'run': run_id, 'algo': algo,
@@ -749,6 +720,8 @@ def main_page():
                     print(f"[CRITICAL ERROR] trigger_pipeline_execution crashed: {str(ex)}")
                     
                 finally:
+                    import gc
+                    gc.collect()
                     state.btn_run.enable()
                     state.btn_stop.disable()
 
