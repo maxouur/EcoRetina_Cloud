@@ -292,13 +292,18 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'Neural Network':
-        layers = tuple(int(x.strip()) for x in args['nn_layers'].split(','))
-        model = MLPRegressor(
-            hidden_layer_sizes=layers, activation=args['nn_activation'], solver=args['nn_solver'],
-            alpha=args['nn_alpha'], learning_rate_init=args['nn_lr_init'], max_iter=args['nn_max_iter'], random_state=42
-        )
-        model.fit(X_train, y_train)
-        y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
+    layers = tuple(int(x.strip()) for x in args["nn_layers"].split(','))
+    model = MLPRegressor(
+        hidden_layer_sizes=layers,
+        activation=args["nn_act"],
+        solver=args["nn_sol"],
+        alpha=args["nn_alpha"],
+        learning_rate_init=args["nn_lr"],
+        max_iter=args["nn_iter"],
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+    y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'EcoRETINA':
         if ECO_RETINA_AVAILABLE:
@@ -586,9 +591,11 @@ def main_page():
 
             elif algo == 'Neural Network':
                 state.nn_layers = ui.input(label='Hidden Layers', value='100,50').classes('w-32 rounded-xl')
-                state.nn_activation = ui.select(['relu', 'tanh', 'logistic'], value='relu', label='Activation').classes('w-32 rounded-xl')
-                state.nn_solver = ui.select(['adam', 'sgd'], value='adam', label='Solver').classes('w-32 rounded-xl')
-                state.nn_max_iter = ui.number(label='Max Iterations', value=200).classes('w-28 rounded-xl')
+                state.nn_act = ui.select(['relu', 'tanh', 'logistic'], value='relu', label='Activation').classes('w-32 rounded-xl')
+                state.nn_sol = ui.select(['adam', 'sgd'], value='adam', label='Solver').classes('w-32 rounded-xl')
+                state.nn_alpha = ui.number(label='Alpha (L2)', value=0.0001, format='%.5f').classes('w-28 rounded-xl')
+                state.nn_lr = ui.number(label='Learning Rate', value=0.001, format='%.4f').classes('w-28 rounded-xl')
+                state.nn_iter = ui.number(label='Max Iterations', value=200).classes('w-28 rounded-xl')
 
     async def trigger_pipeline_execution():
         try:
@@ -648,12 +655,12 @@ def main_page():
                 'rf_leaf': int(getattr(state, 'rf_min_leaf', type('obj', (), {'value': 1})).value),
                 'rf_max_features': str(getattr(state, 'rf_max_features', type('obj', (), {'value': '1.0'})).value),
                 
-                'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': "100,50"})).value),
-                'nn_activation': str(getattr(state, 'nn_activation', type('obj', (), {'value': "relu"})).value),
-                'nn_solver': str(getattr(state, 'nn_solver', type('obj', (), {'value': "adam"})).value),
+                'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': '100,50'})).value),
+                'nn_act': str(getattr(state, 'nn_act', type('obj', (), {'value': 'relu'})).value),
+                'nn_sol': str(getattr(state, 'nn_sol', type('obj', (), {'value': 'adam'})).value),
                 'nn_alpha': float(getattr(state, 'nn_alpha', type('obj', (), {'value': 0.0001})).value),
-                'nn_lr_init': float(getattr(state, 'nn_lr_init', type('obj', (), {'value': 0.001})).value),
-                'nn_max_iter': int(getattr(state, 'nn_max_iter', type('obj', (), {'value': 200})).value),
+                'nn_lr': float(getattr(state, 'nn_lr', type('obj', (), {'value': 0.001})).value),
+                'nn_iter': int(getattr(state, 'nn_iter', type('obj', (), {'value': 200})).value),
             }
 
             flat_selected_features = cont_features + dummy_features
