@@ -13,7 +13,7 @@ from datetime import datetime
 import matplotlib
 matplotlib.use('Agg')  # Anti-crash thread-safe backend
 import matplotlib.pyplot as plt
-from io import BytesIO, StringIO
+import io
 import base64
 
 from nicegui import ui, run, app
@@ -35,6 +35,231 @@ os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+
+# ==========================
+# Summary rapport generation and visualization
+# =========================
+
+def generate_summary_plots_base64(run_data):
+    y_test = run_data['y_test']
+    y_test_pred = run_data['y_test_pred']
+    metrics = run_data['metrics']
+    model_name = run_data['model_name']
+    data_rows = run_data.get('data_rows', [])
+    elasticity_data = run_data.get('elasticity_data', [])
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4), facecolor='#0f172a')
+    fig.tight_layout(pad=4.0)
+    
+    # 1. Actual vs Predicted
+    axes[0].scatter(y_test, y_test_pred, alpha=0.6, color='#38bdf8', label='Points')
+    min_v, max_v = min(y_test), max(y_test)
+    axes[0].plot([min_v, max_v], [min_v, max_v], color='#22c55e', linestyle='--', label='Fit idéal')
+    std_resid = np.std(y_test - y_test_pred)
+    x_line = np.linspace(min_v, max_v, 100)
+    axes[0].fill_between(x_line, x_line - 1.96 * std_resid, x_line + 1.96 * std_resid, color='#22c55e', alpha=0.15, label='95% CI')
+    axes[0].set_title('Actual vs Predicted (Test Set)', color='white')
+    axes[0].set_xlabel('Actual', color='white')
+    axes[0].set_ylabel('Predicted', color='white')
+    axes[0].tick_params(colors='white')
+    axes[0].set_facecolor('#1e293b')
+    axes[0].legend(facecolor='#0f172a', edgecolor='none', labelcolor='white', loc='upper left', fontsize=8)
+
+    # 2. Residuals Distribution
+    residuals = y_test - y_test_pred
+    axes[1].hist(residuals, bins=20, color='#ef4444', alpha=0.7, edgecolor='white')
+    axes[1].set_title('Residuals Distribution', color='white')
+    axes[1].set_xlabel('Residual', color='white')
+    axes[1].tick_params(colors='white')
+    axes[1].set_facecolor('#1e293b')
+    p_val = metrics.get('norm_p_val', float('nan'))
+    axes[1].text(0.95, 0.95, f"P-Value: {p_val:.4f}" if not np.isnan(p_val) else "P-Value: N/A", 
+                 transform=axes[1].transAxes, color='white', fontsize=10, ha='right', va='top', 
+                 bbox=dict(facecolor='#0f172a', alpha=0.8, edgecolor='none'))
+
+    # 3. Top Features / Elasticities
+    plot_data = [d for d in data_rows if d["Variable"] != "const"]
+    val_key = "Importance" if len(plot_data) > 0 and "Importance" in plot_data[0] else "Coefficient" if len(plot_data) > 0 else None
+        
+    if val_key:
+        top_feats = sorted(plot_data, key=lambda x: abs(x[val_key]), reverse=True)[:10]
+        y_labels = [(d["Variable"][:15] + "..") if len(d["Variable"]) > 15 else d["Variable"] for d in top_feats][::-1]
+        x_vals = [d[val_key] for d in top_feats][::-1]
+        colors = ['#22c55e' if v >= 0 else '#ef4444' for v in x_vals]
+        axes[2].barh(y_labels, x_vals, color=colors)
+        axes[2].set_title(f"Top 10 Variables ({model_name})", color='white')
+        axes[2].tick_params(colors='white')
+        axes[2].set_facecolor('#1e293b')
+    elif model_name == 'EcoRETINA' and len(elasticity_data) > 0:
+        top_elast = sorted(elasticity_data, key=lambda x: abs(x["Elasticity"]), reverse=True)[:10]
+        y_labels = [(d["Variable"][:15] + "..") if len(d["Variable"]) > 15 else d["Variable"] for d in top_elast][::-1]
+        e_vals = [d["Elasticity"] for d in top_elast][::-1]
+        colors = ['#22c55e' if v >= 0 else '#ef4444' for v in e_vals]
+        axes[2].barh(y_labels, e_vals, color=colors)
+        axes[2].axvline(x=0, color='white', linestyle=':', alpha=0.6)
+        axes[2].set_title('Top 10 Elasticities (%)', color='white')
+        axes[2].set_xlabel('% Change in Y for +1% in X', color='white')
+        axes[2].tick_params(colors='white')
+        axes[2].set_facecolor('#1e293b')
+    else:
+        axes[2].text(0.5, 0.5, "No Feature Data Available", color='white', ha='center', va='center')
+        axes[2].set_facecolor('#1e293b')
+        axes[2].axis('off')
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode('utf-8')
+
+def handle_table_right_click(event, state):
+    # event.args contient [event_js, row_data, index]
+    args = getattr(event, 'args', [])
+    if len(args) >= 2 and isinstance(args[1], dict):
+        run_id = args[1].get('run')
+    elif isinstance(args, dict):
+        run_id = args.get('run')
+    else:
+        run_id = None
+
+    if run_id and run_id in state.run_history:
+        show_summary_dialog(run_id, state)
+    else:
+        ui.notify("Select a valid row to display the report.", type='info')
+
+def show_summary_dialog(run_id, state):
+    run_data = state.run_history.get(run_id)
+    if not run_data:
+        return ui.notify(f"Run {run_id} not found.", type='warning')
+
+    model = run_data.get("model")
+    model_name = run_data.get("model_name", "Unknown")
+    feature_names = run_data.get("feature_names", [])
+    raw_features = run_data.get("raw_features", [])
+    metrics = run_data.get("metrics", {})
+    y_test = run_data.get("y_test", [])
+    y_test_pred = run_data.get("y_test_pred", [])
+
+    summary_lines = []
+    data_rows = []
+    elasticity_data = []
+
+    # 1. Performance Metrics
+    summary_lines.append("=" * 110)
+    summary_lines.append(f"{'PIPELINE PERFORMANCE METRICS':^110}")
+    summary_lines.append("=" * 110)
+    summary_lines.append(f" TRAIN -> R-squared: {metrics.get('r2_tr', 0):>8.4f} | Adj R2: {metrics.get('adj_r2_tr', 0):>8.4f} | RMSE: {metrics.get('rmse_tr', 0):>8.4f} | MAPE: {metrics.get('mape_tr', 0):>6.2f}%")
+    summary_lines.append(f" TEST  -> R-squared: {metrics.get('r2_te', 0):>8.4f} | Adj R2: {metrics.get('adj_r2_te', 0):>8.4f} | RMSE: {metrics.get('rmse_te', 0):>8.4f} | MAPE: {metrics.get('mape_te', 0):>6.2f}%")
+    summary_lines.append(f" Residuals Normality (Shapiro-Wilk) : P-Value = {metrics.get('norm_p_val', 0):.6f}")
+    summary_lines.append(f" Emissions (kgCO2eq)                 : {metrics.get('emissions', 0):.8f}\n")
+
+    # 2. Elasticities (EcoRETINA)
+    if model_name == 'EcoRETINA' and hasattr(model, 'predict'):
+        summary_lines.append("=" * 110)
+        summary_lines.append(f"{'ECONOMETRIC ELASTICITIES & MARGINAL EFFECTS AT MEAN POINT':^110}")
+        summary_lines.append("=" * 110)
+        summary_lines.append(f" {'Original Variable':<30} | {'Mean Value (X)':>18} | {'Marginal Effect (dY/dX)':>24} | {'Elasticity (%)':>18}")
+        summary_lines.append("-" * 110)
+
+        con_indices = getattr(model, 'con_cols_indices', [])
+        X_raw_test = run_data.get("X_test", np.zeros((1, len(raw_features))))
+        
+        if con_indices and len(X_raw_test) > 0:
+            X_mean_raw = np.mean(X_raw_test, axis=0, keepdims=True)
+            y_mean = np.mean(y_test) if np.mean(y_test) != 0 else 1e-9
+            y_base = model.predict(X_mean_raw)[0]
+            delta = 1e-4
+
+            for idx in con_indices:
+                feat_label = raw_features[idx] if idx < len(raw_features) else f"Var_{idx}"
+                x_val = X_mean_raw[0, idx]
+                h = x_val * delta if x_val != 0 else delta
+                X_pert = X_mean_raw.copy()
+                X_pert[0, idx] += h
+                try:
+                    y_pert = model.predict(X_pert)[0]
+                    marginal_effect = (y_pert - y_base) / h
+                    elasticity = marginal_effect * (x_val / y_mean)
+                except Exception:
+                    marginal_effect, elasticity = 0.0, 0.0
+
+                summary_lines.append(f" {feat_label[:30]:<30} | {x_val:>18.4f} | {marginal_effect:>24.6f} | {elasticity:>17.4f}%")
+                elasticity_data.append({"Variable": feat_label, "Elasticity": elasticity, "MarginalEffect": marginal_effect})
+        summary_lines.append("\n")
+
+    # 3. Features & Coefficients
+    if model_name in ['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet'] and (hasattr(model, 'sm_model') or hasattr(model, 'coef_')):
+        summary_lines.append("=" * 110)
+        summary_lines.append(f"{'ENGINEERED FEATURES & STATISTICAL SIGNIFICANCE':^110}")
+        summary_lines.append("=" * 110)
+        summary_lines.append(f" {'Variable':<30} | {'Coefficient':>22} | {'T-Stat':>15} | {'P-Value':>15}")
+        summary_lines.append("-" * 110)
+
+        is_sm = hasattr(model, 'sm_model')
+        params_dict = model.sm_model.params if is_sm else dict(zip(feature_names, model.coef_))
+        sorted_feats = sorted(feature_names, key=lambda f: abs(params_dict.get(f, 0)), reverse=True)
+
+        for feat in sorted_feats:
+            coef = params_dict.get(feat, 0.0)
+            tstat = model.sm_model.tvalues.get(feat, float('nan')) if is_sm else float('nan')
+            pval = model.sm_model.pvalues.get(feat, float('nan')) if is_sm else float('nan')
+            summary_lines.append(f" {feat[:30]:<30} | {coef:>22.6f} | {tstat:>15.3f} | {pval:>15.4f}")
+            data_rows.append({"Variable": feat, "Coefficient": coef, "T-Stat": tstat, "P-Value": pval})
+    else:
+        summary_lines.append("=" * 110)
+        summary_lines.append(f"{'FEATURE IMPORTANCES (TREE-BASED / NEURAL NETWORKS)':^110}")
+        summary_lines.append("=" * 110)
+        importances = []
+        if model_name == 'Neural Network' and hasattr(model, 'coefs_'):
+            importances = np.mean(np.abs(model.coefs_[0]), axis=1)
+        elif hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+        importances = np.array(importances).flatten()
+        for feat, val in sorted(zip(feature_names, importances), key=lambda x: abs(x[1]), reverse=True):
+            summary_lines.append(f" {feat[:35]:<35} | {float(val):>25.6f}")
+            data_rows.append({"Variable": feat, "Importance": val})
+
+    run_data['data_rows'] = data_rows
+    run_data['elasticity_data'] = elasticity_data
+
+    # Formule mathématique
+    eq = "Y = \n"
+    if hasattr(model, 'sm_model') or hasattr(model, 'coef_'):
+        params = model.sm_model.params if hasattr(model, 'sm_model') else dict(zip(feature_names, model.coef_))
+        intercept = getattr(model, 'intercept_', 0.0)
+        if intercept != 0.0:
+            eq += f"   {intercept:.4f}\n"
+        for f in feature_names:
+            c = params.get(f, 0)
+            if c != 0:
+                eq += f"   {'+' if c > 0 else '-'} {abs(c):.4f} * ({f})\n"
+    else:
+        eq += "[Mathematical equation not applicable for Tree-based or Neural Network algorithms.]"
+
+    # Construction de la modale d'affichage NiceGUI
+    with ui.dialog() as dialog, ui.card().classes('w-[1100px] max-w-7xl max-h-[90vh] bg-slate-900 border border-slate-700 text-slate-100 flex flex-col'):
+        with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800'):
+            ui.label(f"📊 Detailed Analysis - {run_id} ({model_name})").classes('text-lg font-bold text-emerald-400')
+            ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
+
+        with ui.tabs().classes('w-full text-slate-300') as tabs:
+            t1 = ui.tab('Statistical Report')
+            t2 = ui.tab('Visual Formula')
+            t3 = ui.tab('Graphical Analysis')
+
+        with ui.tab_panels(tabs, value=t1).classes('w-full bg-slate-950/60 p-4 rounded-xl flex-grow overflow-auto'):
+            with ui.tab_panel(t1):
+                ui.code("\n".join(summary_lines)).classes('w-full text-xs font-mono bg-transparent text-emerald-300')
+            
+            with ui.tab_panel(t2):
+                ui.code(eq).classes('w-full text-sm font-mono bg-transparent text-cyan-300')
+
+            with ui.tab_panel(t3):
+                b64_img = generate_summary_plots_base64(run_data)
+                ui.image(f'data:image/png;base64,{b64_img}').classes('w-full rounded-lg shadow-xl')
+
+    dialog.open()
 
 @app.head('/')
 def read_head():
@@ -207,7 +432,7 @@ def _parse_csv_bytes(raw_bytes):
     elif '\t' in first_line:
         sep = '\t'
 
-    df = pd.read_csv(StringIO(text_data), sep=sep)
+    df = pd.read_csv(io.StringIO(text_data), sep=sep)
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
@@ -663,7 +888,7 @@ def main_page():
                             fig.delaxes(axes[j])
                         fig.tight_layout()
                         
-                        buf = BytesIO()
+                        buf = io.BytesIO()
                         plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
                         buf.seek(0)
                         img_b64 = base64.b64encode(buf.read()).decode('utf-8')
@@ -758,7 +983,7 @@ def main_page():
 
     def export_comparison_matrix():
         if not state.compare_table_ui.rows: return ui.notify("No comparison data available", type='warning')
-        output = StringIO()
+        output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['Run_ID', 'Algorithm', 'R2_Train', 'R2_Test', 'MAPE_Test', 'CO2_kg'])
         for r in state.compare_table_ui.rows:
@@ -804,7 +1029,7 @@ def main_page():
 
     def export_predicted_csv():
         if state.df_predict is None: return
-        csv_buf = StringIO()
+        csv_buf = io.StringIO()
         state.df_predict.to_csv(csv_buf, index=False)
         ui.download(csv_buf.getvalue().encode('utf-8'), 'EcoRETINA_Predictions_Output.csv')
 
@@ -988,6 +1213,11 @@ def main_page():
                             ], rows=[]
                         ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800')
                         
+                        state.compare_table_ui.on(
+                            'row-contextmenu',
+                            lambda e: handle_table_right_click(e, state)
+                        )
+
                         with ui.row().classes('w-full justify-between mt-6'):
                             ui.button('Clear Table', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
                             ui.button('Export Comparison CSV', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
