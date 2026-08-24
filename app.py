@@ -563,6 +563,9 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         raw_params = str(args.get('eco_params', '[-1.0, 0.0, 1.0]')).strip('[]')
         eco_params_list = [float(x.strip()) for x in raw_params.split(',') if x.strip()]
     
+        cont_names = list(args.get('cont_names', []))
+        dummy_names = list(args.get('dummy_names', []))
+        
         # 2. Construction STRICTE des indices continus et dummies
         cont_set = set(cont_names)
         dummy_set = set(dummy_names)
