@@ -268,8 +268,10 @@ def read_head():
 try:
     from eco_retina_V3 import EcoRETINA
     ECO_RETINA_AVAILABLE = True
+    print("[INFO] EcoRETINA V3 importé avec succès !")
 except Exception as e:
     ECO_RETINA_AVAILABLE = False
+    print(f"[ERREUR CRITIQUE] Impossible d'importer EcoRETINA V3 : {e}")
 
 warnings.filterwarnings("ignore")
 
