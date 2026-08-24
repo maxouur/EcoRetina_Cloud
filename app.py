@@ -564,11 +564,11 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         eco_params_list = [float(x.strip()) for x in raw_params.split(',') if x.strip()]
     
         # 2. Construction STRICTE des indices continus et dummies
-        cont_names = args.get('cont_names', [])
-        dummy_names = args.get('dummy_names', [])
+        cont_set = set(cont_names)
+        dummy_set = set(dummy_names)
         
-        con_cols_indices = [i for i, f in enumerate(features) if f in cont_names]
-        dummy_cols_indices = [i for i, f in enumerate(features) if f in dummy_names]
+        con_cols_indices = [int(i) for i, f in enumerate(features) if f in cont_set]
+        dummy_cols_indices = [int(i) for i, f in enumerate(features) if f in dummy_set]
         
         # Si tout est vide, on force toutes les colonnes en continues par défaut
         if not con_cols_indices and not dummy_cols_indices:
