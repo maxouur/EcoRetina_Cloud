@@ -545,38 +545,54 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'EcoRETINA':
-        if ECO_RETINA_AVAILABLE:
-            raw_params = str(args.get('eco_params', '[-1.0, 0.0, 1.0]')).strip('[]')
-            eco_params_list = [float(x.strip()) for x in raw_params.split(',') if x.strip()]
-            
-            raw_eps = str(args.get('eco_epsilon', 'auto'))
-            try:
-                eps_val = float(raw_eps) if raw_eps.lower() != 'auto' else 'auto'
-            except ValueError:
-                eps_val = 'auto'
-
-            model = EcoRETINA()
-            model.fit(
-                y=y_train, 
-                X=X_train, 
-                col_names=features, 
-                params=eco_params_list,
-                loss=args['eco_loss'], 
-                grid=args['eco_grid'], 
-                reg_type=args['eco_reg_type'], 
-                cross_dummy=cross_dummy_bool, 
-                max_r2=float(args.get('eco_max_r2', 0.99)),
-                max_instances=int(args.get('eco_max_instances', 100000)),
-                max_reg=args['eco_max_reg'], 
-                chunk_size=args['eco_chunk_size'], 
-                model_step=int(args.get('eco_model_step', 1)),
-                seed=args['eco_seed'], 
-                cov_type=args['eco_cov_type'],
-                handle_zeros=args.get('eco_handle_zeros', 'prevent_division'),
-                epsilon=eps_val,
-                add_log=True if str(args.get('eco_add_log', 'False')) == 'True' else False,
-                add_relu=True if str(args.get('eco_add_relu', 'False')) == 'True' else False
-            )
+        if not ECO_RETINA_AVAILABLE:
+            raise ImportError("EcoRETINA V3 non disponible")
+    
+        # 1. Extraction propre des exposants (ex: [-1.0, 0.0, 1.0, 2.0])
+        raw_params = str(args.get('eco_params', '[-1.0, 0.0, 1.0]')).strip('[]')
+        eco_params_list = [float(x.strip()) for x in raw_params.split(',') if x.strip()]
+    
+        # 2. Construction STRICTE des indices continus et dummies
+        cont_names = args.get('cont_names', [])
+        dummy_names = args.get('dummy_names', [])
+        
+        con_cols_indices = [i for i, f in enumerate(features) if f in cont_names]
+        dummy_cols_indices = [i for i, f in enumerate(features) if f in dummy_names]
+        
+        # Si tout est vide, on force toutes les colonnes en continues par défaut
+        if not con_cols_indices and not dummy_cols_indices:
+            con_cols_indices = list(range(len(features)))
+            dummy_cols_indices = []
+    
+        # 3. Récupération des booléens d'activation
+        cross_dummy_bool = True if str(args.get('eco_cross_dummy', 'False')).lower() in ['true', '1'] else False
+        add_log_bool = True if str(args.get('eco_add_log', 'False')).lower() in ['true', '1'] else False
+        add_relu_bool = True if str(args.get('eco_add_relu', 'False')).lower() in ['true', '1'] else False
+    
+        model = EcoRETINA()
+        model.fit(
+            y=y_train, 
+            X=X_train, 
+            con_cols_indices=con_cols_indices,      # 👈 Permet les croisements continus (X1 * X2^gamma)
+            dummy_cols_indices=dummy_cols_indices,  # 👈 Permet les croisements dummy * continu
+            col_names=features, 
+            params=eco_params_list,
+            loss=args.get('eco_loss', 'mse'), 
+            grid=float(args.get('eco_grid', 0.005)), 
+            reg_type=args.get('eco_reg_type', 'linear'), 
+            cross_dummy=cross_dummy_bool,           # 👈 Permet les croisements dummy * dummy
+            max_r2=float(args.get('eco_max_r2', 0.99)),
+            max_instances=int(args.get('eco_max_instances', 100000)),
+            max_reg=int(args.get('eco_max_reg', 100)), 
+            chunk_size=int(args.get('eco_chunk_size', 500)), 
+            model_step=int(args.get('eco_model_step', 1)),
+            seed=int(args.get('eco_seed', 8)), 
+            cov_type=args.get('eco_cov_type', 'nonrobust'),
+            handle_zeros=args.get('eco_handle_zeros', 'prevent_division'),
+            epsilon=args.get('eco_epsilon', 'auto'),
+            add_log=add_log_bool,
+            add_relu=add_relu_bool
+        )
             y_train_pred = model.predict(X_train)
             y_test_pred = model.predict(X_test)
         else:
@@ -638,12 +654,15 @@ def main_page():
                     state.btn_run.disable()
                     state.btn_stop.enable()
                     state.algo_status_lbl.update()
-                
+
+                    chosen_cont = [col for col, cb in state.cont_checkboxes.items() if cb.value]
+                    chosen_dummy = [col for col, cb in state.dummy_checkboxes.items() if cb.value]
+                    
                     config_args = {
                         "algo": algo,
                         "target_col": target,
-                        "cont_names": cont_features,
-                        "dummy_names": dummy_features,
+                        'cont_names': [c for c in chosen_cont if c != target],
+                        'dummy_names': [d for d in chosen_dummy if d != target],
                         'eco_loss': str(getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value),
                         'eco_reg_type': str(getattr(state, 'eco_reg_type', type('obj', (), {'value': "linear"})).value),
                         'eco_cross_dummy': str(getattr(state, 'eco_cross_dummy', type('obj', (), {'value': "False"})).value),
