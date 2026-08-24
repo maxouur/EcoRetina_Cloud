@@ -31,6 +31,11 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import statsmodels.api as sm
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 @app.head('/')
 def read_head():
     return {"status": "ok"}
@@ -207,11 +212,15 @@ def _parse_csv_bytes(raw_bytes):
     return df
 
 def execute_ml_math_core(df_input, algo, target, features, args):
-    df_clean = df_input.dropna(subset=[target] + features).fillna(0)
+    df_clean = df_input.dropna(subset=[target]).fillna(0)
     X = df_clean[features].values
     y = df_clean[target].values
+    split_ratio = float(args.get('split_ratio', 0.8))
     
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    if split_ratio >= 1.0:
+        X_train, X_test, y_train, y_test = X_encoded, X_encoded, y, y
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, train_size=split_ratio, random_state=42)
     tracker = EmissionsTracker(tracking_mode='process', log_level='error')
     tracker.start()
     
@@ -291,19 +300,20 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         model.fit(X_train, y_train)
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
-    elif algo == 'Neural Network':
-    layers = tuple(int(x.strip()) for x in args["nn_layers"].split(','))
-    model = MLPRegressor(
-        hidden_layer_sizes=layers,
-        activation=args["nn_act"],
-        solver=args["nn_sol"],
-        alpha=args["nn_alpha"],
-        learning_rate_init=args["nn_lr"],
-        max_iter=args["nn_iter"],
-        random_state=42
-    )
-    model.fit(X_train, y_train)
-    y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
+    if algo == 'Neural Network':
+        layers = tuple(int(x.strip()) for x in str(args["nn_layers"]).split(','))
+        model = MLPRegressor(
+            hidden_layer_sizes=layers,
+            activation=args["nn_act"],
+            solver=args["nn_sol"],
+            alpha=float(args["nn_alpha"]),
+            learning_rate_init=float(args["nn_lr"]),
+            max_iter=int(args["nn_iter"]),
+            random_state=42
+        )
+        model.fit(X_train, y_train)
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
         
     elif algo == 'EcoRETINA':
         if ECO_RETINA_AVAILABLE:
