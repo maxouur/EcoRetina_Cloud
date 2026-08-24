@@ -585,171 +585,171 @@ def main_page():
             sync_all_comboboxes()
 
     def refresh_algo_param_view():
-    algo = state.algo_choice.value
-    state.param_options_frame.clear()
-    
-    with state.param_options_frame:
-        if algo == 'EcoRETINA':
-            # Ligne 1
-            state.eco_loss = ui.select(['mse', 'mae', 'MAPE', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-28 rounded-xl')
-            state.eco_reg_type = ui.select(['linear', 'logit', 'probit'], value='linear', label='Reg Type').classes('w-28 rounded-xl')
-            state.eco_cross_dummy = ui.select(['False', 'True'], value='False', label='Cross Dummy').classes('w-28 rounded-xl')
-            state.eco_cov_type = ui.select(['nonrobust', 'HC0', 'HC1', 'HC2', 'HC3'], value='nonrobust', label='Cov Type').classes('w-28 rounded-xl')
-            
-            # Ligne 2
-            state.eco_params = ui.input(label='Params (list)', value='[-1.0, 0.0, 1.0]').classes('w-32 rounded-xl')
-            state.eco_max_r2 = ui.number(label='Max R²', value=0.99, format='%.2f').classes('w-24 rounded-xl')
-            state.eco_grid = ui.number(label='Grid Step', value=0.005, format='%.4f').classes('w-24 rounded-xl')
-            state.eco_seed = ui.number(label='Seed', value=8).classes('w-20 rounded-xl')
-            
-            # Ligne 3
-            state.eco_max_instances = ui.number(label='Max Inst.', value=100000).classes('w-28 rounded-xl')
-            state.eco_max_reg = ui.number(label='Max Reg', value=100).classes('w-24 rounded-xl')
-            state.eco_chunk_size = ui.number(label='Chunk Size', value=500).classes('w-24 rounded-xl')
-            state.eco_model_step = ui.number(label='Model Step', value=1).classes('w-24 rounded-xl')
-            
-            # Ligne 4 (Gestion des zéros et non-linéarités)
-            state.eco_handle_zeros = ui.select(['prevent_division', 'translate', 'drop_rows'], value='prevent_division', label='Handle Zeros').classes('w-36 rounded-xl')
-            state.eco_epsilon = ui.input(label='Epsilon (Shift)', value='auto').classes('w-28 rounded-xl')
-            state.eco_add_log = ui.select(['False', 'True'], value='False', label='Add Logs (ln)').classes('w-28 rounded-xl')
-            state.eco_add_relu = ui.select(['False', 'True'], value='False', label='Add ReLU').classes('w-28 rounded-xl')
-            
-        elif algo in ['OLS', 'Lasso', 'Ridge', 'ElasticNet']:
-            state.ols_fit_intercept = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-32 rounded-xl')
-            if algo != 'OLS':
-                state.alpha_input = ui.number(label='Alpha (Penalty)', value=0.01, format='%.4f').classes('w-28 rounded-xl')
-            if algo in ['Lasso', 'ElasticNet', 'Ridge']:
-                state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-28 rounded-xl')
-                state.tol_input = ui.number(label='Tolerance', value=0.0001, format='%.5f').classes('w-28 rounded-xl')
-            if algo == 'Ridge':
-                state.ridge_solver = ui.select(['auto', 'svd', 'cholesky', 'lsqr', 'sag'], value='auto', label='Solver').classes('w-32 rounded-xl')
-            if algo == 'ElasticNet':
-                state.en_l1_ratio = ui.number(label='L1 Ratio', value=0.5, format='%.2f').classes('w-24 rounded-xl')
-
-        elif algo == 'XGBoost':
-            state.xgb_n = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
-            state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-24 rounded-xl')
-            state.xgb_lr = ui.number(label='Learning Rate', value=0.1, format='%.2f').classes('w-24 rounded-xl')
-            state.xgb_subsample = ui.number(label='Subsample', value=1.0, format='%.2f').classes('w-24 rounded-xl')
-            state.xgb_colsample = ui.number(label='Colsample', value=1.0, format='%.2f').classes('w-24 rounded-xl')
-            state.xgb_gamma = ui.number(label='Gamma', value=0.0, format='%.2f').classes('w-24 rounded-xl')
-            state.xgb_alpha = ui.number(label='Alpha (L1)', value=0.0, format='%.2f').classes('w-24 rounded-xl')
-            state.xgb_lambda = ui.number(label='Lambda (L2)', value=1.0, format='%.2f').classes('w-24 rounded-xl')
-
-        elif algo == 'Random Forest':
-            state.rf_n_estimators = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
-            state.rf_max_depth = ui.number(label='Max Depth (0=None)', value=12).classes('w-28 rounded-xl')
-            state.rf_min_split = ui.number(label='Min Split', value=2).classes('w-24 rounded-xl')
-            state.rf_min_leaf = ui.number(label='Min Leaf', value=1).classes('w-24 rounded-xl')
-            state.rf_max_features = ui.select(['1.0', 'sqrt', 'log2'], value='1.0', label='Max Features').classes('w-28 rounded-xl')
-
-        elif algo == 'Neural Network':
-            state.nn_layers = ui.input(label='Hidden Layers', value='100, 50').classes('w-32 rounded-xl')
-            state.nn_act = ui.select(['relu', 'tanh', 'logistic', 'identity'], value='relu', label='Activation').classes('w-32 rounded-xl')
-            state.nn_sol = ui.select(['adam', 'sgd', 'lbfgs'], value='adam', label='Solver').classes('w-32 rounded-xl')
-            state.nn_alpha = ui.number(label='Alpha (L2)', value=0.0001, format='%.5f').classes('w-28 rounded-xl')
-            state.nn_lr = ui.number(label='Learning Rate', value=0.001, format='%.4f').classes('w-28 rounded-xl')
-            state.nn_iter = ui.number(label='Max Iterations', value=200).classes('w-28 rounded-xl')
-    async def trigger_pipeline_execution():
-        try:
-            if state.df is None: 
-                return ui.notify("No active dataset loaded!", type='warning')
-                
-            target = state.main_target_select.value
-            algo = state.algo_choice.value
-            
-            chosen_cont = [col for col, cb in state.cont_checkboxes.items() if cb.value]
-            chosen_dummy = [col for col, cb in state.dummy_checkboxes.items() if cb.value]
-            
-            cont_features = [v for v in chosen_cont if v != target]
-            dummy_features = [v for v in chosen_dummy if v != target]
-            
-            if not cont_features and not dummy_features: 
-                return ui.notify("Please select at least one explanatory feature (Continuous or Dummy)!", type='warning')
-
-            state.algo_status_lbl.text = "Running pipeline calculations..."
-            state.btn_run.disable()
-            state.btn_stop.enable()
-            state.algo_status_lbl.update()
+        algo = state.algo_choice.value
+        state.param_options_frame.clear()
         
-            config_args = {
-                "algo": algo,
-                "target_col": target,
-                "cont_names": cont_features,
-                "dummy_names": dummy_features,
-                'eco_loss': str(getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value),
-                'eco_reg_type': str(getattr(state, 'eco_reg_type', type('obj', (), {'value': "linear"})).value),
-                'eco_cross_dummy': str(getattr(state, 'eco_cross_dummy', type('obj', (), {'value': "False"})).value),
-                'eco_cov_type': str(getattr(state, 'eco_cov_type', type('obj', (), {'value': "nonrobust"})).value),
-                'eco_grid': float(getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value),
-                'eco_max_reg': int(getattr(state, 'eco_max_reg', type('obj', (), {'value': 100})).value),
-                'eco_chunk_size': int(getattr(state, 'eco_chunk_size', type('obj', (), {'value': 500})).value),
-                'eco_seed': int(getattr(state, 'eco_seed', type('obj', (), {'value': 8})).value),
-                'eco_params': str(getattr(state, 'eco_params', type('obj', (), {'value': '[-1.0, 0.0, 1.0]'})).value),
-                'eco_max_r2': float(getattr(state, 'eco_max_r2', type('obj', (), {'value': 0.99})).value),
-                'eco_max_instances': int(getattr(state, 'eco_max_instances', type('obj', (), {'value': 100000})).value),
-                'eco_model_step': int(getattr(state, 'eco_model_step', type('obj', (), {'value': 1})).value),
-                'eco_handle_zeros': str(getattr(state, 'eco_handle_zeros', type('obj', (), {'value': 'prevent_division'})).value),
-                'eco_epsilon': str(getattr(state, 'eco_epsilon', type('obj', (), {'value': 'auto'})).value),
-                'eco_add_log': str(getattr(state, 'eco_add_log', type('obj', (), {'value': 'False'})).value),
-                'eco_add_relu': str(getattr(state, 'eco_add_relu', type('obj', (), {'value': 'False'})).value),
+        with state.param_options_frame:
+            if algo == 'EcoRETINA':
+                # Ligne 1
+                state.eco_loss = ui.select(['mse', 'mae', 'MAPE', 'AIC', 'BIC'], value='mse', label='Loss').classes('w-28 rounded-xl')
+                state.eco_reg_type = ui.select(['linear', 'logit', 'probit'], value='linear', label='Reg Type').classes('w-28 rounded-xl')
+                state.eco_cross_dummy = ui.select(['False', 'True'], value='False', label='Cross Dummy').classes('w-28 rounded-xl')
+                state.eco_cov_type = ui.select(['nonrobust', 'HC0', 'HC1', 'HC2', 'HC3'], value='nonrobust', label='Cov Type').classes('w-28 rounded-xl')
                 
-                'fit_intercept': str(getattr(state, 'ols_fit_intercept', getattr(state, 'fit_intercept_input', type('obj', (), {'value': 'True'}))).value),
-                'alpha': float(getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value),
-                'max_iter': int(getattr(state, 'max_iter_input', getattr(state, 'nn_max_iter', type('obj', (), {'value': 1000}))).value),
-                'tol': float(getattr(state, 'tol_input', type('obj', (), {'value': 0.0001})).value),
-                'ridge_solver': str(getattr(state, 'ridge_solver', type('obj', (), {'value': 'auto'})).value),
-                'en_l1_ratio': float(getattr(state, 'en_l1_ratio', type('obj', (), {'value': 0.5})).value),
+                # Ligne 2
+                state.eco_params = ui.input(label='Params (list)', value='[-1.0, 0.0, 1.0]').classes('w-32 rounded-xl')
+                state.eco_max_r2 = ui.number(label='Max R²', value=0.99, format='%.2f').classes('w-24 rounded-xl')
+                state.eco_grid = ui.number(label='Grid Step', value=0.005, format='%.4f').classes('w-24 rounded-xl')
+                state.eco_seed = ui.number(label='Seed', value=8).classes('w-20 rounded-xl')
                 
-                'xgb_n': int(getattr(state, 'xgb_n', type('obj', (), {'value': 100})).value),
-                'xgb_depth': int(getattr(state, 'xgb_depth', type('obj', (), {'value': 6})).value),
-                'xgb_lr': float(getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value),
-                'xgb_subsample': float(getattr(state, 'xgb_subsample', type('obj', (), {'value': 1.0})).value),
-                'xgb_colsample': float(getattr(state, 'xgb_colsample', type('obj', (), {'value': 1.0})).value),
-                'xgb_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value),
-                'xgb_alpha': float(getattr(state, 'xgb_alpha', type('obj', (), {'value': 0.0})).value),
-                'xgb_lambda': float(getattr(state, 'xgb_lambda', type('obj', (), {'value': 1.0})).value),
+                # Ligne 3
+                state.eco_max_instances = ui.number(label='Max Inst.', value=100000).classes('w-28 rounded-xl')
+                state.eco_max_reg = ui.number(label='Max Reg', value=100).classes('w-24 rounded-xl')
+                state.eco_chunk_size = ui.number(label='Chunk Size', value=500).classes('w-24 rounded-xl')
+                state.eco_model_step = ui.number(label='Model Step', value=1).classes('w-24 rounded-xl')
                 
-                'rf_n_estimators': int(getattr(state, 'rf_n_estimators', type('obj', (), {'value': 100})).value),
-                'rf_max_depth': int(getattr(state, 'rf_max_depth', type('obj', (), {'value': 0})).value),
-                'rf_split': int(getattr(state, 'rf_min_split', type('obj', (), {'value': 2})).value),
-                'rf_leaf': int(getattr(state, 'rf_min_leaf', type('obj', (), {'value': 1})).value),
-                'rf_max_features': str(getattr(state, 'rf_max_features', type('obj', (), {'value': '1.0'})).value),
+                # Ligne 4 (Gestion des zéros et non-linéarités)
+                state.eco_handle_zeros = ui.select(['prevent_division', 'translate', 'drop_rows'], value='prevent_division', label='Handle Zeros').classes('w-36 rounded-xl')
+                state.eco_epsilon = ui.input(label='Epsilon (Shift)', value='auto').classes('w-28 rounded-xl')
+                state.eco_add_log = ui.select(['False', 'True'], value='False', label='Add Logs (ln)').classes('w-28 rounded-xl')
+                state.eco_add_relu = ui.select(['False', 'True'], value='False', label='Add ReLU').classes('w-28 rounded-xl')
                 
-                'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': '100,50'})).value),
-                'nn_act': str(getattr(state, 'nn_act', type('obj', (), {'value': 'relu'})).value),
-                'nn_sol': str(getattr(state, 'nn_sol', type('obj', (), {'value': 'adam'})).value),
-                'nn_alpha': float(getattr(state, 'nn_alpha', type('obj', (), {'value': 0.0001})).value),
-                'nn_lr': float(getattr(state, 'nn_lr', type('obj', (), {'value': 0.001})).value),
-                'nn_iter': int(getattr(state, 'nn_iter', type('obj', (), {'value': 200})).value),
-            }
-
-            flat_selected_features = cont_features + dummy_features
-
-            loop = asyncio.get_event_loop()
-            res = await loop.run_in_executor(None, execute_ml_math_core, state.df, algo, target, flat_selected_features, config_args)
+            elif algo in ['OLS', 'Lasso', 'Ridge', 'ElasticNet']:
+                state.ols_fit_intercept = ui.select(['True', 'False'], value='True', label='Fit Intercept').classes('w-32 rounded-xl')
+                if algo != 'OLS':
+                    state.alpha_input = ui.number(label='Alpha (Penalty)', value=0.01, format='%.4f').classes('w-28 rounded-xl')
+                if algo in ['Lasso', 'ElasticNet', 'Ridge']:
+                    state.max_iter_input = ui.number(label='Max Iterations', value=1000).classes('w-28 rounded-xl')
+                    state.tol_input = ui.number(label='Tolerance', value=0.0001, format='%.5f').classes('w-28 rounded-xl')
+                if algo == 'Ridge':
+                    state.ridge_solver = ui.select(['auto', 'svd', 'cholesky', 'lsqr', 'sag'], value='auto', label='Solver').classes('w-32 rounded-xl')
+                if algo == 'ElasticNet':
+                    state.en_l1_ratio = ui.number(label='L1 Ratio', value=0.5, format='%.2f').classes('w-24 rounded-xl')
+    
+            elif algo == 'XGBoost':
+                state.xgb_n = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
+                state.xgb_depth = ui.number(label='Max Depth', value=6).classes('w-24 rounded-xl')
+                state.xgb_lr = ui.number(label='Learning Rate', value=0.1, format='%.2f').classes('w-24 rounded-xl')
+                state.xgb_subsample = ui.number(label='Subsample', value=1.0, format='%.2f').classes('w-24 rounded-xl')
+                state.xgb_colsample = ui.number(label='Colsample', value=1.0, format='%.2f').classes('w-24 rounded-xl')
+                state.xgb_gamma = ui.number(label='Gamma', value=0.0, format='%.2f').classes('w-24 rounded-xl')
+                state.xgb_alpha = ui.number(label='Alpha (L1)', value=0.0, format='%.2f').classes('w-24 rounded-xl')
+                state.xgb_lambda = ui.number(label='Lambda (L2)', value=1.0, format='%.2f').classes('w-24 rounded-xl')
+    
+            elif algo == 'Random Forest':
+                state.rf_n_estimators = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
+                state.rf_max_depth = ui.number(label='Max Depth (0=None)', value=12).classes('w-28 rounded-xl')
+                state.rf_min_split = ui.number(label='Min Split', value=2).classes('w-24 rounded-xl')
+                state.rf_min_leaf = ui.number(label='Min Leaf', value=1).classes('w-24 rounded-xl')
+                state.rf_max_features = ui.select(['1.0', 'sqrt', 'log2'], value='1.0', label='Max Features').classes('w-28 rounded-xl')
+    
+            elif algo == 'Neural Network':
+                state.nn_layers = ui.input(label='Hidden Layers', value='100, 50').classes('w-32 rounded-xl')
+                state.nn_act = ui.select(['relu', 'tanh', 'logistic', 'identity'], value='relu', label='Activation').classes('w-32 rounded-xl')
+                state.nn_sol = ui.select(['adam', 'sgd', 'lbfgs'], value='adam', label='Solver').classes('w-32 rounded-xl')
+                state.nn_alpha = ui.number(label='Alpha (L2)', value=0.0001, format='%.5f').classes('w-28 rounded-xl')
+                state.nn_lr = ui.number(label='Learning Rate', value=0.001, format='%.4f').classes('w-28 rounded-xl')
+                state.nn_iter = ui.number(label='Max Iterations', value=200).classes('w-28 rounded-xl')
+        async def trigger_pipeline_execution():
+            try:
+                if state.df is None: 
+                    return ui.notify("No active dataset loaded!", type='warning')
+                    
+                target = state.main_target_select.value
+                algo = state.algo_choice.value
+                
+                chosen_cont = [col for col, cb in state.cont_checkboxes.items() if cb.value]
+                chosen_dummy = [col for col, cb in state.dummy_checkboxes.items() if cb.value]
+                
+                cont_features = [v for v in chosen_cont if v != target]
+                dummy_features = [v for v in chosen_dummy if v != target]
+                
+                if not cont_features and not dummy_features: 
+                    return ui.notify("Please select at least one explanatory feature (Continuous or Dummy)!", type='warning')
+    
+                state.algo_status_lbl.text = "Running pipeline calculations..."
+                state.btn_run.disable()
+                state.btn_stop.enable()
+                state.algo_status_lbl.update()
             
-            run_id = f"Run_{time.strftime('%H%M%S')}"
-            state.run_history[run_id] = res
-            state.latest_run_by_algo[algo] = run_id
-            
-            state.compare_table_ui.add_rows([{
-                'run': run_id, 'algo': algo,
-                'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
-                'r2_te': f"{res['metrics']['r2_te']:.4f}", 'rmse_te': f"{res['metrics']['rmse_te']:.4f}",
-                'mape_te': f"{res['metrics']['mape_te']:.2f}%", 'co2': f"{res['metrics']['emissions']:.5f}"
-            }])
-            
-            state.algo_status_lbl.text = f"Model saved: {run_id}"
-            state.log(f"Pipeline completed successfully for {algo}.")
-            
-        except Exception as ex:
-            ui.notify(f"Pipeline initiation failed: {str(ex)}", type='negative')
-            print(f"[CRITICAL ERROR] trigger_pipeline_execution crashed: {str(ex)}")
-            
-        finally:
-            state.btn_run.enable()
-            state.btn_stop.disable()
+                config_args = {
+                    "algo": algo,
+                    "target_col": target,
+                    "cont_names": cont_features,
+                    "dummy_names": dummy_features,
+                    'eco_loss': str(getattr(state, 'eco_loss', type('obj', (), {'value': "mse"})).value),
+                    'eco_reg_type': str(getattr(state, 'eco_reg_type', type('obj', (), {'value': "linear"})).value),
+                    'eco_cross_dummy': str(getattr(state, 'eco_cross_dummy', type('obj', (), {'value': "False"})).value),
+                    'eco_cov_type': str(getattr(state, 'eco_cov_type', type('obj', (), {'value': "nonrobust"})).value),
+                    'eco_grid': float(getattr(state, 'eco_grid', type('obj', (), {'value': 0.005})).value),
+                    'eco_max_reg': int(getattr(state, 'eco_max_reg', type('obj', (), {'value': 100})).value),
+                    'eco_chunk_size': int(getattr(state, 'eco_chunk_size', type('obj', (), {'value': 500})).value),
+                    'eco_seed': int(getattr(state, 'eco_seed', type('obj', (), {'value': 8})).value),
+                    'eco_params': str(getattr(state, 'eco_params', type('obj', (), {'value': '[-1.0, 0.0, 1.0]'})).value),
+                    'eco_max_r2': float(getattr(state, 'eco_max_r2', type('obj', (), {'value': 0.99})).value),
+                    'eco_max_instances': int(getattr(state, 'eco_max_instances', type('obj', (), {'value': 100000})).value),
+                    'eco_model_step': int(getattr(state, 'eco_model_step', type('obj', (), {'value': 1})).value),
+                    'eco_handle_zeros': str(getattr(state, 'eco_handle_zeros', type('obj', (), {'value': 'prevent_division'})).value),
+                    'eco_epsilon': str(getattr(state, 'eco_epsilon', type('obj', (), {'value': 'auto'})).value),
+                    'eco_add_log': str(getattr(state, 'eco_add_log', type('obj', (), {'value': 'False'})).value),
+                    'eco_add_relu': str(getattr(state, 'eco_add_relu', type('obj', (), {'value': 'False'})).value),
+                    
+                    'fit_intercept': str(getattr(state, 'ols_fit_intercept', getattr(state, 'fit_intercept_input', type('obj', (), {'value': 'True'}))).value),
+                    'alpha': float(getattr(state, 'alpha_input', type('obj', (), {'value': 0.01})).value),
+                    'max_iter': int(getattr(state, 'max_iter_input', getattr(state, 'nn_max_iter', type('obj', (), {'value': 1000}))).value),
+                    'tol': float(getattr(state, 'tol_input', type('obj', (), {'value': 0.0001})).value),
+                    'ridge_solver': str(getattr(state, 'ridge_solver', type('obj', (), {'value': 'auto'})).value),
+                    'en_l1_ratio': float(getattr(state, 'en_l1_ratio', type('obj', (), {'value': 0.5})).value),
+                    
+                    'xgb_n': int(getattr(state, 'xgb_n', type('obj', (), {'value': 100})).value),
+                    'xgb_depth': int(getattr(state, 'xgb_depth', type('obj', (), {'value': 6})).value),
+                    'xgb_lr': float(getattr(state, 'xgb_lr', type('obj', (), {'value': 0.1})).value),
+                    'xgb_subsample': float(getattr(state, 'xgb_subsample', type('obj', (), {'value': 1.0})).value),
+                    'xgb_colsample': float(getattr(state, 'xgb_colsample', type('obj', (), {'value': 1.0})).value),
+                    'xgb_gamma': float(getattr(state, 'xgb_gamma', type('obj', (), {'value': 0.0})).value),
+                    'xgb_alpha': float(getattr(state, 'xgb_alpha', type('obj', (), {'value': 0.0})).value),
+                    'xgb_lambda': float(getattr(state, 'xgb_lambda', type('obj', (), {'value': 1.0})).value),
+                    
+                    'rf_n_estimators': int(getattr(state, 'rf_n_estimators', type('obj', (), {'value': 100})).value),
+                    'rf_max_depth': int(getattr(state, 'rf_max_depth', type('obj', (), {'value': 0})).value),
+                    'rf_split': int(getattr(state, 'rf_min_split', type('obj', (), {'value': 2})).value),
+                    'rf_leaf': int(getattr(state, 'rf_min_leaf', type('obj', (), {'value': 1})).value),
+                    'rf_max_features': str(getattr(state, 'rf_max_features', type('obj', (), {'value': '1.0'})).value),
+                    
+                    'nn_layers': str(getattr(state, 'nn_layers', type('obj', (), {'value': '100,50'})).value),
+                    'nn_act': str(getattr(state, 'nn_act', type('obj', (), {'value': 'relu'})).value),
+                    'nn_sol': str(getattr(state, 'nn_sol', type('obj', (), {'value': 'adam'})).value),
+                    'nn_alpha': float(getattr(state, 'nn_alpha', type('obj', (), {'value': 0.0001})).value),
+                    'nn_lr': float(getattr(state, 'nn_lr', type('obj', (), {'value': 0.001})).value),
+                    'nn_iter': int(getattr(state, 'nn_iter', type('obj', (), {'value': 200})).value),
+                }
+    
+                flat_selected_features = cont_features + dummy_features
+    
+                loop = asyncio.get_event_loop()
+                res = await loop.run_in_executor(None, execute_ml_math_core, state.df, algo, target, flat_selected_features, config_args)
+                
+                run_id = f"Run_{time.strftime('%H%M%S')}"
+                state.run_history[run_id] = res
+                state.latest_run_by_algo[algo] = run_id
+                
+                state.compare_table_ui.add_rows([{
+                    'run': run_id, 'algo': algo,
+                    'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
+                    'r2_te': f"{res['metrics']['r2_te']:.4f}", 'rmse_te': f"{res['metrics']['rmse_te']:.4f}",
+                    'mape_te': f"{res['metrics']['mape_te']:.2f}%", 'co2': f"{res['metrics']['emissions']:.5f}"
+                }])
+                
+                state.algo_status_lbl.text = f"Model saved: {run_id}"
+                state.log(f"Pipeline completed successfully for {algo}.")
+                
+            except Exception as ex:
+                ui.notify(f"Pipeline initiation failed: {str(ex)}", type='negative')
+                print(f"[CRITICAL ERROR] trigger_pipeline_execution crashed: {str(ex)}")
+                
+            finally:
+                state.btn_run.enable()
+                state.btn_stop.disable()
 
     def export_comparison_matrix():
         if not state.compare_table_ui.rows: return ui.notify("No comparison data available", type='warning')
