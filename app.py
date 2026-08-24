@@ -281,11 +281,12 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
         
     elif algo == 'Random Forest':
-        depth = None if args['rf_max_depth'] == 0 else args['rf_max_depth']
+        raw_depth = args.get('rf_max_depth', 12)
+        depth = None if (raw_depth is None or int(raw_depth) == 0) else int(raw_depth)
         max_f = None if args['rf_max_features'] == '1.0' else args['rf_max_features']
         model = RandomForestRegressor(
             n_estimators=args['rf_n_estimators'], max_depth=depth, 
-            min_samples_split=args['rf_split'], min_samples_leaf=args['rf_leaf'], max_features=max_f, random_state=42
+            min_samples_split=args['rf_split'], min_samples_leaf=args['rf_leaf'], max_features=max_f, n_jobs = 1, random_state=42
         )
         model.fit(X_train, y_train)
         y_train_pred, y_test_pred = model.predict(X_train), model.predict(X_test)
@@ -580,7 +581,7 @@ def main_page():
 
             elif algo == 'Random Forest':
                 state.rf_n_estimators = ui.number(label='Estimators', value=100).classes('w-24 rounded-xl')
-                state.rf_max_depth = ui.number(label='Max Depth (0=None)', value=0).classes('w-28 rounded-xl')
+                state.rf_max_depth = ui.number(label='Max Depth (0=None)', value=12).classes('w-24 rounded-xl')
                 state.rf_min_split = ui.number(label='Min Split', value=2).classes('w-24 rounded-xl')
 
             elif algo == 'Neural Network':
