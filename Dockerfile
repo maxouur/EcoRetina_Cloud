@@ -6,19 +6,22 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# Installer les dépendances système minimales pour Tkinter et la compilation de XGBoost
+# Installer les dépendances système minimales pour Tkinter et la compilation
 RUN apt-get update && apt-get install -y \
     python3-tk \
     build-essential \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Installer les bibliothèques requises
-RUN pip install --no-cache-dir \
+# Installer les bibliothèques requises avec versions compatibles Numba
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    "numpy>=1.26.4,<2.0.0" \
+    numba>=0.60.0 \
     nicegui \
     customtkinter \
     scikit-learn \
     pandas \
-    numpy \
     scipy \
     xgboost \
     statsmodels \
