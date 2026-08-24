@@ -79,8 +79,12 @@ class Workspace:
             self.future.clear()
 
 class OLSWrapper:
-    def __init__(self, res): self.sm_model = res
-    def predict(self, X): return self.sm_model.predict(X)
+    def __init__(self, res): 
+        self.sm_model = res
+    def predict(self, X): 
+        if isinstance(X, pd.DataFrame):
+            X = X.values
+        return self.sm_model.predict(X)
 
 # ==========================================
 # 2. IA COPILOT MULTI-PROVIDER
@@ -219,15 +223,26 @@ def execute_ml_math_core(df_input, algo, target, features, args):
 
     if algo == 'OLS':
         if fit_intercept_bool:
-            X_train_fit = sm.add_constant(X_train, has_constant='add')
-            X_test_fit = sm.add_constant(X_test, has_constant='add')
+            X_train_fit = np.c_[np.ones((X_train.shape[0], 1), dtype=np.float32), X_train.astype(np.float32)]
+            X_test_fit = np.c_[np.ones((X_test.shape[0], 1), dtype=np.float32), X_test.astype(np.float32)]
             feature_names_final = ['const'] + features
         else:
-            X_train_fit, X_test_fit = X_train, X_test
-        sm_res = sm.OLS(y_train, pd.DataFrame(X_train_fit, columns=feature_names_final)).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
+            X_train_fit = X_train.astype(np.float32)
+            X_test_fit = X_test.astype(np.float32)
+
+        cov_type = args.get('eco_cov_type', 'nonrobust')
+        
+        # To avoid memory issues with large datasets and robust covariance types
+        if X_train_fit.shape[0] > 10000 and cov_type.startswith('HC'):
+            cov_type = 'nonrobust'
+
+        # Direct fit using statsmodels OLS with float32 to reduce memory usage
+        sm_model = sm.OLS(y_train.astype(np.float32), X_train_fit)
+        sm_res = sm_model.fit(cov_type=cov_type)
+        
         model = OLSWrapper(sm_res)
-        y_train_pred = sm_res.predict(pd.DataFrame(X_train_fit, columns=feature_names_final))
-        y_test_pred = sm_res.predict(pd.DataFrame(X_test_fit, columns=feature_names_final))
+        y_train_pred = sm_res.predict(X_train_fit)
+        y_test_pred = sm_res.predict(X_test_fit)
         
     elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
         if algo == 'Lasso':
