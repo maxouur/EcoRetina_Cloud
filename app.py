@@ -41,7 +41,7 @@ def read_head():
     return {"status": "ok"}
 
 try:
-    from eco_retina import EcoRETINA
+    from eco_retina_V3 import EcoRETINA
     ECO_RETINA_AVAILABLE = True
 except Exception as e:
     ECO_RETINA_AVAILABLE = False
