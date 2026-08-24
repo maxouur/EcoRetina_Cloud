@@ -33,10 +33,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
     codecarbon \
     matplotlib \
     pillow \
-    openai \
-    anthropic \
-    groq \
-    google-genai \
     requests \
     openpyxl
 
