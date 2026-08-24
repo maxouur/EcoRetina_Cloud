@@ -442,18 +442,26 @@ def _parse_csv_bytes(raw_bytes):
     return df
 
 def execute_ml_math_core(df_input, algo, target, features, args):
-
     emissions = np.nan
-
     
-    # 1. Nettoyage strict identique à la version interne
-    df_clean = df_input.dropna(subset=[target]).fillna(0)
-    y = df_clean[target].values
-    X_encoded = df_clean[features].values
+    # 1. Sélection et conversion forcée de toutes les colonnes en numérique pur
+    df_subset = df_input[[target] + list(features)].copy()
+    for col in df_subset.columns:
+        df_subset[col] = pd.to_numeric(df_subset[col], errors='coerce')
+    
+    # 2. Nettoyage des NaN et typage strict en float32 ou float64 C-contiguous
+    df_clean = df_subset.dropna(subset=[target]).fillna(0)
+    
+    # 3. Extraction avec dtype garanti (float32 ou float64, JAMAIS object)
+    y = np.ascontiguousarray(df_clean[target].values, dtype=np.float64)
+    X_encoded = np.ascontiguousarray(df_clean[features].values, dtype=np.float64)
 
-    # 2. Ratio dynamique issu du slider
+    # Libération mémoire
+    del df_subset, df_clean
+    import gc
+    gc.collect()
+
     split_ratio = float(args.get('split_ratio', 0.8))
-    
     if split_ratio >= 1.0:
         X_train, X_test, y_train, y_test = X_encoded, X_encoded, y, y
     else:
