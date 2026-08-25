@@ -340,10 +340,14 @@ class OLSWrapper:
 # ==========================================
 # 2. IA COPILOT MULTI-PROVIDER
 # ==========================================
+import json
+import urllib.request
+import asyncio
+
 class EcoRetinaChatAgent:
     def __init__(self, api_key: str, provider: str):
         self.provider = provider
-        self.api_key = api_key
+        self.api_key = api_key.strip()
         self.system_prompt = (
             "You are the Chief Econometrician and AI Support Guide for the EcoRETINA ML Workbench.\n\n"
             "ROLE 1 - WORKBENCH NAVIGATOR: Guide users if they are lost.\n"
@@ -370,70 +374,108 @@ class EcoRetinaChatAgent:
         )
         self.history = []
 
-        if provider == "Google Gemini":
-            from google import genai
-            self.client = genai.Client(api_key=api_key)
-        elif provider == "OpenAI (ChatGPT)":
-            import openai
-            self.client = openai.OpenAI(api_key=api_key)
-        elif provider == "Groq":
-            from groq import Groq
-            self.client = Groq(api_key=api_key)
+    def _execute_raw_http(self, text: str) -> str:
+        headers = {"Content-Type": "application/json"}
+
+        # 1. GOOGLE GEMINI (REST v1beta)
+        if self.provider == "Google Gemini":
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
+            
+            gemini_contents = []
+            for h in self.history:
+                role = "user" if h["role"] == "user" else "model"
+                gemini_contents.append({"role": role, "parts": [{"text": h["content"]}]})
+            gemini_contents.append({"role": "user", "parts": [{"text": text}]})
+
+            payload = {
+                "system_instruction": {"parts": [{"text": self.system_prompt}]},
+                "contents": gemini_contents
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply = data["candidates"][0]["content"]["parts"][0]["text"]
+                self.history.append({"role": "user", "content": text})
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
+
+        # 2. OPENAI (ChatGPT)
+        elif self.provider == "OpenAI (ChatGPT)":
+            url = "https://api.openai.com/v1/chat/completions"
+            headers["Authorization"] = f"Bearer {self.api_key}"
+            messages = [{"role": "system", "content": self.system_prompt}] + self.history + [{"role": "user", "content": text}]
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": messages
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply = data["choices"][0]["message"]["content"]
+                self.history.append({"role": "user", "content": text})
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
+
+        # 3. GROQ
+        elif self.provider == "Groq":
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers["Authorization"] = f"Bearer {self.api_key}"
+            messages = [{"role": "system", "content": self.system_prompt}] + self.history + [{"role": "user", "content": text}]
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": messages
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply = data["choices"][0]["message"]["content"]
+                self.history.append({"role": "user", "content": text})
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
+
+        # 4. CLAUDE (ANTHROPIC)
         elif self.provider == "Claude (Anthropic)":
-            import anthropic
-            self.client = anthropic.Anthropic(api_key=api_key)
+            url = "https://api.anthropic.com/v1/messages"
+            headers["x-api-key"] = self.api_key
+            headers["anthropic-version"] = "2023-06-01"
+            messages = self.history + [{"role": "user", "content": text}]
+            payload = {
+                "model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 1024,
+                "system": self.system_prompt,
+                "messages": messages
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply = data["content"][0]["text"]
+                self.history.append({"role": "user", "content": text})
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
+
+        return "Unknown AI Provider selected."
 
     async def ask(self, text: str, bubble_ui):
         max_retries = 3
+        loop = asyncio.get_event_loop()
+        
         for attempt in range(max_retries):
             try:
-                if self.provider == "Google Gemini":
-                    response = self.client.chats.create(
-                        model="gemini-2.5-flash",
-                        config={"system_instruction": self.system_prompt},
-                    )
-                    reply = response.send_message(text).text
-
-                elif self.provider == "OpenAI (ChatGPT)":
-                    self.history.append({"role": "user", "content": text})
-                    response = self.client.chat.completions.create(
-                        model="gpt-4o-mini", 
-                        messages = [{"role": "system", "content": self.system_prompt}] + self.history
-                    )
-                    reply = response.choices[0].message.content
-
-                elif self.provider == "Groq":
-                    self.history.append({"role": "user", "content": text})
-                    response = self.client.chat.completions.create(
-                        model="llama-3.3-70b-versatile", 
-                        messages = [{"role": "system", "content": self.system_prompt}] + self.history
-                    )
-                    reply = response.choices[0].message.content
-
-                elif self.provider == "Claude (Anthropic)":
-                    self.history.append({"role": "user", "content": text})
-                    response = self.client.messages.create(
-                        model="claude-3-5-sonnet-20241022",
-                        max_tokens=1024,
-                        system=self.system_prompt,
-                        messages=self.history,
-                    )
-                    reply = response.content[0].text
-                    self.history.append({"role": "assistant", "content": reply})
-
+                reply = await loop.run_in_executor(None, self._execute_raw_http, text)
                 bubble_ui.text = reply
                 bubble_ui.update()
                 return
 
             except Exception as e:
-                if ("503" in str(e) or "unavailable" in str(e).lower()) and attempt < max_retries - 1:
+                err_msg = str(e)
+                if ("503" in err_msg or "unavailable" in err_msg.lower() or "429" in err_msg) and attempt < max_retries - 1:
                     wait_time = 2 * (attempt + 1)
-                    bubble_ui.text = f"⏳ Service busy (503). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
+                    bubble_ui.text = f"⏳ Service busy ({err_msg}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
                     bubble_ui.update()
                     await asyncio.sleep(wait_time)
                     continue
 
-                bubble_ui.text = f"[API Error] : {str(e)}"
+                bubble_ui.text = f"[API Error] : {err_msg}"
                 bubble_ui.update()
                 return
 
