@@ -629,9 +629,28 @@ def execute_ml_math_core(df_input, algo, target, features, args):
             'emissions': emissions
         }
     }
+
+
+
 # ==========================================
 # 4. INTERFACE UTILISATEUR & GESTION MULTI-CLIENTS
 # ==========================================
+
+
+def on_row_right_click(event, state):
+    args = getattr(event, 'args', [])
+    run_id = None
+    
+    if isinstance(args, list) and len(args) >= 2 and isinstance(args[1], dict):
+        run_id = args[1].get('run')
+    elif isinstance(args, dict):
+        run_id = args.get('run')
+        
+    if run_id:
+        clean_id = str(run_id).replace('⭐', '').replace('★', '').strip()
+        state.selected_context_run_id = clean_id
+
+        
 @ui.page('/')
 def main_page():
     # État isolé unique pour CET utilisateur connecté
@@ -796,7 +815,13 @@ def main_page():
         try:
             file_obj = e.file
             raw_bytes = await file_obj.read()
-            state.df = await run.io_bound(_parse_csv_bytes, raw_bytes)
+            df_raw = await run.io_bound(_parse_csv_bytes, raw_bytes)
+            
+            # Conversion automatique des colonnes numériques en float32 dès l'import
+            num_cols = df_raw.select_dtypes(include=[np.number]).columns
+            df_raw[num_cols] = df_raw[num_cols].astype(np.float32)
+            
+            state.df = df_raw
             state.save_state("Import dataset")
             state.log(f"Dataset successfully loaded ({len(state.df)} rows, {len(state.df.columns)} variables).")
             sync_all_comboboxes()
@@ -1244,6 +1269,10 @@ def main_page():
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                         ui.label('Global Comparative Benchmark').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
                         
+                        # 1. Variable d'état pour stocker la ligne ciblée par le clic droit
+                        state.selected_context_run_id = None
+
+                        # 2. Tableau de résultats
                         state.compare_table_ui = ui.table(
                             columns=[
                                 {'name': 'run', 'label': 'Run ID', 'field': 'run', 'align': 'center'},
@@ -1255,18 +1284,27 @@ def main_page():
                                 {'name': 'mape_te', 'label': 'MAPE Test', 'field': 'mape_te', 'align': 'center'},
                                 {'name': 'co2', 'label': 'Carbon (kgCO2eq)', 'field': 'co2', 'align': 'center'},
                             ], rows=[]
-                        ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800')
-                        
+                        ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800 cursor-context-menu')
+
+                        # 3. Menu contextuel flottant au clic droit
+                        with state.compare_table_ui:
+                            with ui.menu().props('context-menu auto-close').classes('bg-slate-900 border border-slate-700 shadow-2xl p-1 rounded-xl') as ctx_menu:
+                                state.ctx_menu_ui = ctx_menu
+                                ui.menu_item(
+                                    '📊 View Detailed Report', 
+                                    on_click=lambda: show_summary_dialog(state.selected_context_run_id, state) if state.selected_context_run_id else None
+                                ).classes('text-emerald-400 font-semibold text-xs hover:bg-slate-800 rounded-lg px-3 py-2')
+
+                        # 4. Écouteur d'événement pour intercepter le clic droit et stocker le run_id
                         state.compare_table_ui.on(
                             'row-contextmenu',
-                            lambda e: handle_table_right_click(e, state)
+                            lambda e: on_row_right_click(e, state)
                         )
 
                         with ui.row().classes('w-full justify-between mt-6'):
                             ui.button('Clear Table', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
                             ui.button('Export Comparison CSV', on_click=export_comparison_matrix).classes('bg-emerald-600 rounded-xl font-bold')
-
-                # STEP 4 : PREDICT
+                                # STEP 4 : PREDICT
                 with ui.tab_panel('t_predict'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                         ui.label('Prediction on New Dataset').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
