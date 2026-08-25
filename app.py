@@ -42,8 +42,10 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 # =========================
 
 def generate_summary_plots_base64(run_data):
-    y_test = run_data['y_test']
-    y_test_pred = run_data['y_test_pred']
+    # Conversion forcée en numpy array pour permettre les opérations mathématiques vectorielles
+    y_test = np.asarray(run_data['y_test'], dtype=np.float64)
+    y_test_pred = np.asarray(run_data['y_test_pred'], dtype=np.float64)
+    
     metrics = run_data['metrics']
     model_name = run_data['model_name']
     data_rows = run_data.get('data_rows', [])
@@ -54,7 +56,7 @@ def generate_summary_plots_base64(run_data):
     
     # 1. Actual vs Predicted
     axes[0].scatter(y_test, y_test_pred, alpha=0.6, color='#38bdf8', label='Points')
-    min_v, max_v = min(y_test), max(y_test)
+    min_v, max_v = float(np.min(y_test)), float(np.max(y_test))
     axes[0].plot([min_v, max_v], [min_v, max_v], color='#22c55e', linestyle='--', label='Fit idéal')
     std_resid = np.std(y_test - y_test_pred)
     x_line = np.linspace(min_v, max_v, 100)
@@ -110,23 +112,32 @@ def generate_summary_plots_base64(run_data):
     buf = io.BytesIO()
     fig.savefig(buf, format='png', bbox_inches='tight', dpi=120)
     plt.close(fig)
+    del fig, axes
+    import gc
+    gc.collect()
+    
     buf.seek(0)
     return base64.b64encode(buf.read()).decode('utf-8')
 
-def handle_table_right_click(event, state):
-    # event.args contient [event_js, row_data, index]
-    args = getattr(event, 'args', [])
-    if len(args) >= 2 and isinstance(args[1], dict):
+
+def handle_table_row_click(event, state):
+    args = getattr(event, 'args', None)
+    run_id = None
+
+    # Quasar transmet généralement [event_js, row_data, index]
+    if isinstance(args, list) and len(args) >= 2 and isinstance(args[1], dict):
         run_id = args[1].get('run')
     elif isinstance(args, dict):
         run_id = args.get('run')
-    else:
-        run_id = None
+    elif hasattr(event, 'row') and isinstance(event.row, dict):
+        run_id = event.row.get('run')
 
-    if run_id and run_id in state.run_history:
-        show_summary_dialog(run_id, state)
-    else:
-        ui.notify("Select a valid row to display the report.", type='info')
+    if run_id:
+        clean_id = str(run_id).replace('⭐', '').replace('★', '').strip()
+        if clean_id in state.run_history:
+            show_summary_dialog(clean_id, state)
+        else:
+            ui.notify(f"Run {clean_id} not found in history.", type='warning')
 
 def show_summary_dialog(run_id, state):
     run_data = state.run_history.get(run_id)
@@ -650,7 +661,7 @@ def on_row_right_click(event, state):
         clean_id = str(run_id).replace('⭐', '').replace('★', '').strip()
         state.selected_context_run_id = clean_id
 
-        
+
 @ui.page('/')
 def main_page():
     # État isolé unique pour CET utilisateur connecté
@@ -1286,19 +1297,11 @@ def main_page():
                             ], rows=[]
                         ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800 cursor-context-menu')
 
-                        # 3. Menu contextuel flottant au clic droit
-                        with state.compare_table_ui:
-                            with ui.menu().props('context-menu auto-close').classes('bg-slate-900 border border-slate-700 shadow-2xl p-1 rounded-xl') as ctx_menu:
-                                state.ctx_menu_ui = ctx_menu
-                                ui.menu_item(
-                                    '📊 View Detailed Report', 
-                                    on_click=lambda: show_summary_dialog(state.selected_context_run_id, state) if state.selected_context_run_id else None
-                                ).classes('text-emerald-400 font-semibold text-xs hover:bg-slate-800 rounded-lg px-3 py-2')
-
+                
                         # 4. Écouteur d'événement pour intercepter le clic droit et stocker le run_id
                         state.compare_table_ui.on(
-                            'row-contextmenu',
-                            lambda e: on_row_right_click(e, state)
+                            'row-click', 
+                            lambda e: handle_table_row_click(e, state)
                         )
 
                         with ui.row().classes('w-full justify-between mt-6'):
