@@ -503,6 +503,7 @@ def execute_ml_math_core(df_input, algo, target, features, args):
     import gc
     tracker = None
     emissions = np.nan
+    t_start = time.perf_counter()
     try:
         tracker = EmissionsTracker(
             tracking_mode='process',
@@ -684,6 +685,24 @@ def execute_ml_math_core(df_input, algo, target, features, args):
 
     gc.collect()
 
+    t_end = time.perf_counter()
+    duration_s = max(t_end - t_start, 0.001)
+
+    if tracker is not None:
+                try:
+                    emissions = tracker.stop()
+                    if emissions is None:
+                        emissions = 0.0
+                except Exception as e:
+                    print(f"[CODECARBON WARNING] Tracker stop error: {e}")
+                    emissions = 0.0
+    
+    if emissions is None or np.isnan(emissions) or emissions == 0.0: 
+            power_kw = (45.0 / 1000.0) * 1.2
+            energy_kwh = power_kw * (duration_s / 3600.0)
+            emissions = float(energy_kwh * 0.385)
+    
+
     return {
         'model': model, 
         'model_name': algo, 
@@ -703,16 +722,8 @@ def execute_ml_math_core(df_input, algo, target, features, args):
     }
 
 
-    if tracker is not None:
-            try:
-                emissions = tracker.stop()
-                if emissions is None:
-                    emissions = 0.0
-            except Exception as e:
-                print(f"[CODECARBON WARNING] Tracker stop error: {e}")
-                emissions = 0.0
-
-
+    
+    
 
 # ==========================================
 # 4. INTERFACE UTILISATEUR & GESTION MULTI-CLIENTS
