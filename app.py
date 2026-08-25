@@ -501,7 +501,19 @@ def _parse_csv_bytes(raw_bytes):
 
 def execute_ml_math_core(df_input, algo, target, features, args):
     import gc
+    tracker = None
     emissions = np.nan
+    try:
+        tracker = EmissionsTracker(
+            tracking_mode='process',
+            save_to_file=False,
+            log_level='error'
+        )
+        tracker.start()
+
+
+    except Exception as e:
+        print(f"[CODECARBON WARNING] Tracker start skipped: {e}")
     
     # 1. Sélection numérique stricte en float32
     df_subset = df_input[[target] + list(features)].apply(pd.to_numeric, errors='coerce')
@@ -691,6 +703,16 @@ def execute_ml_math_core(df_input, algo, target, features, args):
     }
 
 
+    if tracker is not None:
+            try:
+                emissions = tracker.stop()
+                if emissions is None:
+                    emissions = 0.0
+            except Exception as e:
+                print(f"[CODECARBON WARNING] Tracker stop error: {e}")
+                emissions = 0.0
+
+
 
 # ==========================================
 # 4. INTERFACE UTILISATEUR & GESTION MULTI-CLIENTS
@@ -819,11 +841,21 @@ def main_page():
                         oldest = next(iter(state.run_history))
                         del state.run_history[oldest]
                     
+                    co2_val = res['metrics'].get('emissions', np.nan)
+                    if co2_val is not None and not np.isnan(co2_val):
+                        co2_str = f"{co2_val:.6f}" if co2_val >= 1e-5 else f"{co2_val:.2e}"
+                    else:
+                        co2_str = "N/A"
+
                     state.compare_table_ui.add_rows([{
-                        'run': run_id, 'algo': algo,
-                        'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
-                        'r2_te': f"{res['metrics']['r2_te']:.4f}", 'rmse_te': f"{res['metrics']['rmse_te']:.4f}",
-                        'mape_te': f"{res['metrics']['mape_te']:.2f}%", 'co2': f"{res['metrics']['emissions']:.5f}"
+                        'run': run_id, 
+                        'algo': algo,
+                        'r2_tr': f"{res['metrics']['r2_tr']:.4f}", 
+                        'mape_tr': f"{res['metrics']['mape_tr']:.2f}%",
+                        'r2_te': f"{res['metrics']['r2_te']:.4f}", 
+                        'rmse_te': f"{res['metrics']['rmse_te']:.4f}",
+                        'mape_te': f"{res['metrics']['mape_te']:.2f}%", 
+                        'co2': co2_str
                     }])
                     
                     state.algo_status_lbl.text = f"Model saved: {run_id}"
