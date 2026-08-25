@@ -450,12 +450,12 @@ def execute_ml_math_core(df_input, algo, target, features, args):
     import gc
     emissions = np.nan
     
-    # 1. Sélection stricte en float32 (2x plus léger que float64)
+    # 1. Sélection numérique stricte en float32
     df_subset = df_input[[target] + list(features)].apply(pd.to_numeric, errors='coerce')
     df_clean = df_subset.dropna(subset=[target]).fillna(0)
     del df_subset
 
-    # Garde-fou automatique sur Cloud : max 4000 lignes pour EcoRETINA
+    # Garde-fou Cloud : max 4000 lignes pour EcoRETINA
     if algo == 'EcoRETINA' and len(df_clean) > 4000:
         df_clean = df_clean.sample(n=4000, random_state=42)
 
@@ -476,8 +476,9 @@ def execute_ml_math_core(df_input, algo, target, features, args):
 
     model = None
     feature_names_final = list(features)
-    fit_intercept_bool = True if str(args.get('fit_intercept', 'True')) == 'True' else False
+    fit_intercept_bool = True if str(args.get('fit_intercept', 'True')).lower() in ['true', '1'] else False
 
+    # --- 1. OLS ---
     if algo == 'OLS':
         if fit_intercept_bool:
             X_train_fit = sm.add_constant(X_train, has_constant='add')
@@ -486,43 +487,78 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         else:
             X_train_fit, X_test_fit = X_train, X_test
         
-        # Passage direct de matrices NumPy (évite la duplication DataFrame)
         sm_res = sm.OLS(y_train, X_train_fit).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
         model = OLSWrapper(sm_res)
         y_train_pred = sm_res.predict(X_train_fit)
         y_test_pred = sm_res.predict(X_test_fit)
         del X_train_fit, X_test_fit
-        
+
+    # --- 2. PENALIZED (Lasso, Ridge, ElasticNet) ---
     elif algo in ['Lasso', 'Ridge', 'ElasticNet']:
         if algo == 'Lasso':
-            model_pen = Lasso(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
+            model = Lasso(alpha=float(args['alpha']), fit_intercept=fit_intercept_bool, max_iter=int(args['max_iter']), tol=float(args['tol']))
         elif algo == 'Ridge':
-            model_pen = Ridge(alpha=args['alpha'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'], solver=args.get('ridge_solver', 'auto'))
+            model = Ridge(alpha=float(args['alpha']), fit_intercept=fit_intercept_bool, max_iter=int(args['max_iter']), tol=float(args['tol']), solver=args.get('ridge_solver', 'auto'))
         else:
-            model_pen = ElasticNet(alpha=args['alpha'], l1_ratio=args['en_l1_ratio'], fit_intercept=fit_intercept_bool, max_iter=args['max_iter'], tol=args['tol'])
+            model = ElasticNet(alpha=float(args['alpha']), l1_ratio=float(args['en_l1_ratio']), fit_intercept=fit_intercept_bool, max_iter=int(args['max_iter']), tol=float(args['tol']))
         
-        model_pen.fit(X_train, y_train)
-        sel_idx = np.where(np.abs(model_pen.coef_) > 1e-5)[0]
-        if len(sel_idx) == 0: 
-            sel_idx = np.arange(X_train.shape[1])
-        
-        X_tr_sel = X_train[:, sel_idx]
-        X_te_sel = X_test[:, sel_idx]
-        feature_names_final = [features[i] for i in sel_idx]
-        
-        if fit_intercept_bool:
-            X_tr_fit = sm.add_constant(X_tr_sel, has_constant='add')
-            X_te_fit = sm.add_constant(X_te_sel, has_constant='add')
-            feature_names_final = ['const'] + feature_names_final
-        else:
-            X_tr_fit, X_te_fit = X_tr_sel, X_te_sel
-            
-        sm_res = sm.OLS(y_train, X_tr_fit).fit(cov_type=args.get('eco_cov_type', 'nonrobust'))
-        model = OLSWrapper(sm_res)
-        y_train_pred = sm_res.predict(X_tr_fit)
-        y_test_pred = sm_res.predict(X_te_fit)
-        del model_pen, X_tr_fit, X_te_fit
-        
+        model.fit(X_train, y_train)
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+
+    # --- 3. XGBOOST ---
+    elif algo == 'XGBoost':
+        model = xgb.XGBRegressor(
+            n_estimators=int(args.get('xgb_n', 100)),
+            max_depth=int(args.get('xgb_depth', 6)),
+            learning_rate=float(args.get('xgb_lr', 0.1)),
+            subsample=float(args.get('xgb_subsample', 1.0)),
+            colsample_bytree=float(args.get('xgb_colsample', 1.0)),
+            gamma=float(args.get('xgb_gamma', 0.0)),
+            reg_alpha=float(args.get('xgb_alpha', 0.0)),
+            reg_lambda=float(args.get('xgb_lambda', 1.0)),
+            n_jobs=1,
+            random_state=42
+        )
+        model.fit(X_train, y_train)
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+
+    # --- 4. RANDOM FOREST ---
+    elif algo == 'Random Forest':
+        raw_depth = args.get('rf_max_depth', 12)
+        depth = None if (raw_depth is None or int(raw_depth) == 0) else int(raw_depth)
+        max_f = None if str(args.get('rf_max_features', '1.0')) == '1.0' else args.get('rf_max_features')
+        model = RandomForestRegressor(
+            n_estimators=int(args.get('rf_n_estimators', 100)),
+            max_depth=depth,
+            min_samples_split=int(args.get('rf_split', 2)),
+            min_samples_leaf=int(args.get('rf_leaf', 1)),
+            max_features=max_f,
+            n_jobs=1,
+            random_state=42
+        )
+        model.fit(X_train, y_train)
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+
+    # --- 5. NEURAL NETWORK ---
+    elif algo == 'Neural Network':
+        layers = tuple(int(x.strip()) for x in str(args.get("nn_layers", "100,50")).split(','))
+        model = MLPRegressor(
+            hidden_layer_sizes=layers,
+            activation=str(args.get("nn_act", "relu")),
+            solver=str(args.get("nn_sol", "adam")),
+            alpha=float(args.get("nn_alpha", 0.0001)),
+            learning_rate_init=float(args.get("nn_lr", 0.001)),
+            max_iter=int(args.get("nn_iter", 200)),
+            random_state=42
+        )
+        model.fit(X_train, y_train)
+        y_train_pred = model.predict(X_train)
+        y_test_pred = model.predict(X_test)
+
+    # --- 6. EcoRETINA ---
     elif algo == 'EcoRETINA':
         if not ECO_RETINA_AVAILABLE:
             raise ImportError("EcoRETINA V3 non disponible")
@@ -560,9 +596,9 @@ def execute_ml_math_core(df_input, algo, target, features, args):
             reg_type=args.get('eco_reg_type', 'linear'), 
             cross_dummy=cross_dummy_bool,
             max_r2=float(args.get('eco_max_r2', 0.99)),
-            max_instances=int(args.get('eco_max_instances', 10000)), # 10 000 max sur Cloud
-            max_reg=int(args.get('eco_max_reg', 30)),               # 30 max pour préserver la RAM
-            chunk_size=int(args.get('eco_chunk_size', 50)),         # 50 max par lot
+            max_instances=int(args.get('eco_max_instances', 10000)),
+            max_reg=int(args.get('eco_max_reg', 30)),
+            chunk_size=int(args.get('eco_chunk_size', 50)),
             model_step=int(args.get('eco_model_step', 1)),
             seed=int(args.get('eco_seed', 8)), 
             cov_type=args.get('eco_cov_type', 'nonrobust'),
@@ -593,7 +629,6 @@ def execute_ml_math_core(df_input, algo, target, features, args):
             'emissions': emissions
         }
     }
-
 # ==========================================
 # 4. INTERFACE UTILISATEUR & GESTION MULTI-CLIENTS
 # ==========================================
