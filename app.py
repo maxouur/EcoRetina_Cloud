@@ -621,6 +621,13 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         y_train_pred = model.predict(X_train)
         y_test_pred = model.predict(X_test)
 
+        if hasattr(model, 'sm_model') and hasattr(model.sm_model, 'params'):
+            feature_names_final = list(model.sm_model.params.index)
+        elif hasattr(model, 'feature_names_'):
+            feature_names_final = list(model.feature_names_)
+        elif hasattr(model, 'selected_features_'):
+            feature_names_final = list(model.selected_features_)
+
     gc.collect()
 
     return {
