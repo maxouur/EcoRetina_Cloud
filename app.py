@@ -1276,14 +1276,11 @@ def main_page():
                             state.btn_stop.disable()
 
                 # STEP 3 : COMPARE
+                
                 with ui.tab_panel('t_compare'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                         ui.label('Global Comparative Benchmark').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-1')
-                        
-                        # 1. Variable d'état pour stocker la ligne ciblée par le clic droit
-                        state.selected_context_run_id = None
 
-                        # 2. Tableau de résultats
                         state.compare_table_ui = ui.table(
                             columns=[
                                 {'name': 'run', 'label': 'Run ID', 'field': 'run', 'align': 'center'},
@@ -1294,29 +1291,35 @@ def main_page():
                                 {'name': 'rmse_te', 'label': 'RMSE Test', 'field': 'rmse_te', 'align': 'center'},
                                 {'name': 'mape_te', 'label': 'MAPE Test', 'field': 'mape_te', 'align': 'center'},
                                 {'name': 'co2', 'label': 'Carbon (kgCO2eq)', 'field': 'co2', 'align': 'center'},
+                                {'name': 'action', 'label': 'Report', 'field': 'action', 'align': 'center'},
                             ], rows=[]
-                        ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800 cursor-context-menu')
+                        ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800')
 
                         state.compare_table_ui.add_slot(
-                            'body',
+                            'body-cell-action',
                             r'''
-                            <q-tr :props="props" @click="$parent.$emit('row_selected', props.row.run)" class="cursor-pointer hover:bg-slate-800 transition-colors">
-                                <q-td v-for="col in props.cols" :key="col.name" :props="props">
-                                    {{ col.value }}
-                                </q-td>
-                            </q-tr>
+                            <q-td :props="props">
+                                <q-btn 
+                                    dense 
+                                    size="sm" 
+                                    class="bg-emerald-600 text-white font-bold px-3 py-1 rounded-lg hover:bg-emerald-500"
+                                    icon="analytics" 
+                                    label="View Report" 
+                                    @click="$parent.$emit('open_report', props.row.run)"
+                                />
+                            </q-td>
                             '''
                         )
-                
-                        def on_custom_row_click(e):
-                            raw_id = e.args if isinstance(e.args, str) else str(e.args)
+
+                        def on_open_report(e):
+                            raw_id = str(e.args) if not isinstance(e.args, str) else e.args
                             clean_id = raw_id.replace('⭐', '').replace('★', '').strip("[]'\" ")
                             if clean_id in state.run_history:
                                 show_summary_dialog(clean_id, state)
                             else:
                                 ui.notify(f"Run {clean_id} not found.", type='warning')
-                
-                        state.compare_table_ui.on('row_selected', on_custom_row_click)
+
+                        state.compare_table_ui.on('open_report', on_open_report)
 
                         with ui.row().classes('w-full justify-between mt-6'):
                             ui.button('Clear Table', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
@@ -1385,7 +1388,7 @@ def main_page():
                     row['r2_te'] = clean_r2
             state.compare_table_ui.update()
 
-    ui.timer(0.7, animate_moving_star)
+    # ui.timer(0.7, animate_moving_star)
 
 # ==========================================
 # 5. DÉMARRAGE DU SERVEUR SUR RENDER
