@@ -1297,12 +1297,26 @@ def main_page():
                             ], rows=[]
                         ).classes('w-full bg-slate-950 text-white rounded-xl overflow-hidden border border-slate-800 cursor-context-menu')
 
-                
-                        # 4. Écouteur d'événement pour intercepter le clic droit et stocker le run_id
-                        state.compare_table_ui.on(
-                            'row-click', 
-                            lambda e: handle_table_row_click(e, state)
+                        state.compare_table_ui.add_slot(
+                            'body',
+                            r'''
+                            <q-tr :props="props" @click="$parent.$emit('row_selected', props.row.run)" class="cursor-pointer hover:bg-slate-800 transition-colors">
+                                <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                                    {{ col.value }}
+                                </q-td>
+                            </q-tr>
+                            '''
                         )
+                
+                        def on_custom_row_click(e):
+                            raw_id = e.args if isinstance(e.args, str) else str(e.args)
+                            clean_id = raw_id.replace('⭐', '').replace('★', '').strip("[]'\" ")
+                            if clean_id in state.run_history:
+                                show_summary_dialog(clean_id, state)
+                            else:
+                                ui.notify(f"Run {clean_id} not found.", type='warning')
+                
+                        state.compare_table_ui.on('row_selected', on_custom_row_click)
 
                         with ui.row().classes('w-full justify-between mt-6'):
                             ui.button('Clear Table', on_click=lambda: state.compare_table_ui.rows.clear()).classes('bg-red-600/80 rounded-xl')
