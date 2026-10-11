@@ -971,6 +971,8 @@ def main_page():
                     
                     state.algo_status_lbl.text = f"Model saved: {run_id}"
                     state.log(f"Pipeline completed successfully for {algo}.")
+
+                    sync_predict_runs()
                     
                 except Exception as ex:
                     ui.notify(f"Pipeline initiation failed: {str(ex)}", type='negative')
@@ -1356,7 +1358,16 @@ def main_page():
     def sync_predict_runs():
         runs = list(state.run_history.keys())
         state.predict_run_select.options = runs
-        if runs: state.predict_run_select.value = runs[-1]
+        if runs:
+            # Sélectionne le dernier modèle entraîné par défaut
+            state.predict_run_select.value = runs[-1]
+            ui.notify(f"Found {len(runs)} trained model(s) ready for prediction.", type='positive')
+        else:
+            state.predict_run_select.value = None
+            ui.notify("No trained models found! Run a model in Tab 2 first.", type='warning')
+        
+        # FORCER le rafraîchissement visuel dans Quasar / NiceGUI
+        state.predict_run_select.update()
 
     def execute_inference_process():
         if state.df_predict is None:
@@ -1559,7 +1570,7 @@ def main_page():
                 t1 = ui.tab('t_data', label='1. Data & Pre-Processing').classes('rounded-xl')
                 t2 = ui.tab('t_algo', label='2. Algorithms & Params').classes('rounded-xl')
                 t3 = ui.tab('t_compare', label='3. Compare Results').classes('rounded-xl')
-                t4 = ui.tab('t_predict', label='4. Predict (New Data)').classes('rounded-xl')
+                t4 = ui.tab('t_predict', label='4. Predict (New Data)').classes('rounded-xl').on('click', sync_predict_runs)
 
             with ui.tab_panels(step_tabs, value='t_data').classes('w-full bg-transparent pt-4 overflow-visible') as step_panels:
                 
