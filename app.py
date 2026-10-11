@@ -192,7 +192,7 @@ async def handle_table_row_click(event, state):
         else:
             ui.notify(f"Run {clean_id} not found in history.", type='warning')
 
-async def show_summary_dialog(run_id, state):
+def show_summary_dialog(run_id, state):
     run_data = state.run_history.get(run_id)
     if not run_data:
         return ui.notify(f"Run {run_id} not found.", type='warning')
@@ -203,12 +203,8 @@ async def show_summary_dialog(run_id, state):
     raw_features = run_data.get("raw_features", [])
     metrics = run_data.get("metrics", {})
     y_test = run_data.get("y_test", [])
-    y_test_pred = run_data.get("y_test_pred", [])
 
     summary_lines = []
-    data_rows = []
-    elasticity_data = []
-
     LINE_SEP = "=" * 78
     SUB_SEP = "-" * 78
 
@@ -224,140 +220,97 @@ async def show_summary_dialog(run_id, state):
         f" TEST  | R²: {metrics.get('r2_te', 0):>6.4f} | Adj R²: {metrics.get('adj_r2_te', 0):>6.4f} | "
         f"RMSE: {metrics.get('rmse_te', 0):>7.3f} | MAPE: {metrics.get('mape_te', 0):>5.2f}%"
     )
-    p_val_disp = metrics.get('norm_p_val', float('nan'))
-    p_val_str = f"{p_val_disp:.6f}" if (p_val_disp is not None and not np.isnan(p_val_disp)) else "N/A"
+    p_val_disp = metrics.get('norm_p_val', None)
+    try:
+        p_val_str = f"{float(p_val_disp):.6f}" if (p_val_disp is not None and not np.isnan(float(p_val_disp))) else "N/A"
+    except Exception:
+        p_val_str = "N/A"
     summary_lines.append(f" Residuals Normality (Shapiro-Wilk) : P-Value = {p_val_str}")
     summary_lines.append(f" Emissions (kgCO2eq)                 : {metrics.get('emissions', 0):.8f}\n")
 
-    # 2. Elasticities (EcoRETINA)
-    if model_name == 'EcoRETINA' and hasattr(model, 'predict'):
-        summary_lines.append(LINE_SEP)
-        summary_lines.append(f"{'ECONOMETRIC ELASTICITIES AT MEAN POINT':^78}")
-        summary_lines.append(LINE_SEP)
-        summary_lines.append(f" {'Variable':<26} | {'Mean (X)':>12} | {'Marginal (dY/dX)':>16} | {'Elasticity':>12}")
-        summary_lines.append(SUB_SEP)
+    # 2. Features & Coefficients (support Scikit-Learn ET Statsmodels)
+    summary_lines.append(LINE_SEP)
+    summary_lines.append(f"{'ENGINEERED FEATURES & COEFFICIENTS':^78}")
+    summary_lines.append(LINE_SEP)
+    summary_lines.append(f" {'Variable':<32} | {'Coefficient':>14} | {'T-Stat':>12} | {'P-Value':>12}")
+    summary_lines.append(SUB_SEP)
 
-        con_indices = getattr(model, 'con_cols_indices', [])
-        X_raw_test = run_data.get("X_test", np.zeros((1, len(raw_features))))
-        
-        if con_indices and len(X_raw_test) > 0:
-            X_mean_raw = np.mean(X_raw_test, axis=0, keepdims=True)
-            y_mean = float(np.mean(y_test)) if float(np.mean(y_test)) != 0.0 else 1e-9
-            y_base = float(model.predict(X_mean_raw)[0])
-            delta = 1e-4
+    try:
+        coef_map = {}
+        tstat_map = {}
+        pval_map = {}
 
-            for idx in con_indices:
-                feat_label = raw_features[idx] if idx < len(raw_features) else f"Var_{idx}"
-                x_val = float(X_mean_raw[0, idx])
-                h = x_val * delta if x_val != 0.0 else delta
-                X_pert = X_mean_raw.copy()
-                X_pert[0, idx] += h
-                try:
-                    y_pert = float(model.predict(X_pert)[0])
-                    marginal_effect = (y_pert - y_base) / h
-                    elasticity = marginal_effect * (x_val / y_mean)
-                except Exception:
-                    marginal_effect, elasticity = 0.0, 0.0
+        if hasattr(model, 'sm_model') and model.sm_model is not None:
+            sm_res = model.sm_model
+            coef_map = dict(sm_res.params)
+            tstat_map = dict(getattr(sm_res, 'tvalues', {}))
+            pval_map = dict(getattr(sm_res, 'pvalues', {}))
+        elif hasattr(model, 'coef_'):
+            coef_arr = np.array(model.coef_).flatten()
+            for fn, c in zip(feature_names, coef_arr):
+                coef_map[fn] = c
 
-                summary_lines.append(f" {feat_label[:26]:<26} | {x_val:>12.4f} | {marginal_effect:>16.4f} | {elasticity:>11.2f}%")
-                elasticity_data.append({"Variable": feat_label, "Elasticity": elasticity, "MarginalEffect": marginal_effect})
-        summary_lines.append("\n")
+        if not coef_map and hasattr(model, 'params'):
+            coef_map = dict(model.params)
 
-    # 3. Features & Coefficients
-    if model_name in ['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet'] and (hasattr(model, 'sm_model') or hasattr(model, 'coef_')):
-        summary_lines.append(LINE_SEP)
-        summary_lines.append(f"{'ENGINEERED FEATURES & STATISTICAL SIGNIFICANCE':^78}")
-        summary_lines.append(LINE_SEP)
-        summary_lines.append(f" {'Variable':<30} | {'Coefficient':>14} | {'T-Stat':>12} | {'P-Value':>12}")
-        summary_lines.append(SUB_SEP)
+        for feat in feature_names:
+            c_val = float(coef_map.get(feat, 0.0))
+            t_val = tstat_map.get(feat, None)
+            p_val = pval_map.get(feat, None)
 
-        is_sm = hasattr(model, 'sm_model')
-        params_dict = model.sm_model.params if is_sm else dict(zip(feature_names, model.coef_))
-        sorted_feats = sorted(feature_names, key=lambda f: abs(params_dict.get(f, 0)), reverse=True)
+            t_str = f"{float(t_val):>12.3f}" if (t_val is not None and not np.isnan(float(t_val))) else f"{'N/A':>12}"
+            p_str = f"{float(p_val):>12.4f}" if (p_val is not None and not np.isnan(float(p_val))) else f"{'N/A':>12}"
+            summary_lines.append(f" {str(feat)[:32]:<32} | {c_val:>14.4f} | {t_str} | {p_str}")
+    except Exception as ex:
+        summary_lines.append(f" [Coefficients extraction error: {ex}]")
 
-        for feat in sorted_feats:
-            coef = float(params_dict.get(feat, 0.0))
-            tstat = float(model.sm_model.tvalues.get(feat, float('nan'))) if is_sm else float('nan')
-            pval = float(model.sm_model.pvalues.get(feat, float('nan'))) if is_sm else float('nan')
-            tstat_str = f"{tstat:>12.3f}" if not np.isnan(tstat) else f"{'N/A':>12}"
-            pval_str = f"{pval:>12.4f}" if not np.isnan(pval) else f"{'N/A':>12}"
-            summary_lines.append(f" {feat[:30]:<30} | {coef:>14.4f} | {tstat_str} | {pval_str}")
-            data_rows.append({"Variable": feat, "Coefficient": coef, "T-Stat": tstat, "P-Value": pval})
-    else:
-        summary_lines.append(LINE_SEP)
-        summary_lines.append(f"{'FEATURE IMPORTANCES (TREE-BASED / NEURAL NETWORKS)':^78}")
-        summary_lines.append(LINE_SEP)
-        importances = []
-        if model_name == 'Neural Network' and hasattr(model, 'coefs_'):
-            importances = np.mean(np.abs(model.coefs_[0]), axis=1)
-        elif hasattr(model, 'feature_importances_'):
-            importances = model.feature_importances_
-        importances = np.array(importances).flatten()
-        for feat, val in sorted(zip(feature_names, importances), key=lambda x: abs(x[1]), reverse=True):
-            summary_lines.append(f" {feat[:45]:<45} | {float(val):>28.6f}")
-            data_rows.append({"Variable": feat, "Importance": val})
+    summary_lines.append("\n")
 
-    run_data['data_rows'] = data_rows
-    run_data['elasticity_data'] = elasticity_data
-
-    # Formule mathématique
+    # Formule mathématique simplifiée
     eq = "Y = \n"
-    if hasattr(model, 'sm_model') or hasattr(model, 'coef_'):
-        params = model.sm_model.params if hasattr(model, 'sm_model') else dict(zip(feature_names, model.coef_))
-        intercept = getattr(model, 'intercept_', 0.0)
-        if intercept != 0.0:
-            eq += f"    {intercept:.4f}\n"
-        for f in feature_names:
-            c = float(params.get(f, 0))
-            if c != 0:
-                eq += f"    {'+' if c > 0 else '-'} {abs(c):.4f} * ({f})\n"
-    else:
-        eq += "[Non-parametric algorithm: Closed-form equation not available for Trees / Neural Networks.]"
+    intercept = getattr(model, 'intercept_', None)
+    if intercept is not None:
+        eq += f"    {float(intercept):.4f}\n"
+    for f in feature_names:
+        c = float(coef_map.get(f, 0.0))
+        if abs(c) > 1e-9:
+            eq += f"    {'+' if c >= 0 else '-'} {abs(c):.4f} * ({f})\n"
 
     full_report_text = "\n".join(summary_lines)
 
-    # Construction de la modale
+    # Affichage immédiat et stable
     with ui.dialog() as dialog:
-        with ui.card().classes(
-            'w-11/12 max-w-4xl h-[85vh] bg-slate-900 border border-slate-700 text-slate-100 '
-            'flex flex-col mx-auto p-4 rounded-2xl shadow-2xl overflow-hidden'
-        ):
+        with ui.card().classes('w-11/12 max-w-4xl h-[85vh] bg-slate-900 border border-slate-700 text-slate-100 flex flex-col mx-auto p-4 rounded-2xl shadow-2xl overflow-hidden'):
             with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
                 ui.label(f"Detailed Analysis - {run_id} ({model_name})").classes('text-base font-bold text-emerald-400')
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
-            # Déclaration explicite des onglets (exactement comme dans visualize dataset)
             with ui.tabs().classes('w-full text-slate-300 shrink-0') as tabs:
-                ui.tab('Report', label='Statistical Report')
-                ui.tab('Formula', label='Visual Formula')
-                ui.tab('Charts', label='Graphical Analysis')
+                t_rep = ui.tab('t_rep', label='Statistical Report')
+                t_form = ui.tab('t_form', label='Visual Formula')
+                t_diag = ui.tab('t_diag', label='Graphical Analysis')
 
-            with ui.tab_panels(tabs, value='Report').classes('w-full bg-slate-950 p-4 rounded-xl flex-grow overflow-auto mt-2'):
+            with ui.tab_panels(tabs, value='t_rep').classes('w-full bg-slate-950 p-4 rounded-xl flex-grow overflow-auto mt-2'):
                 
-                # Panneau 1 : Statistical Report (actif par défaut)
-                with ui.tab_panel('Report'):
+                # Panneau 1 : Rapport texte (garanti visible)
+                with ui.tab_panel('t_rep'):
                     with ui.scroll_area().classes('w-full h-[62vh]'):
-                        ui.html(
-                            f"<pre style='margin:0; font-family: monospace; font-size: 11px; "
-                            f"color: #6ee7b7; white-space: pre; line-height: 1.4;'>{full_report_text}</pre>"
-                        )
+                        ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 11px; color: #6ee7b7; white-space: pre; line-height: 1.4;'>{full_report_text}</pre>")
 
-                # Panneau 2 : Visual Formula
-                with ui.tab_panel('Formula'):
+                # Panneau 2 : Formule
+                with ui.tab_panel('t_form'):
                     with ui.scroll_area().classes('w-full h-[62vh]'):
-                        ui.html(
-                            f"<pre style='margin:0; font-family: monospace; font-size: 12px; "
-                            f"color: #67e8f9; white-space: pre; line-height: 1.4;'>{eq}</pre>"
-                        )
+                        ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 12px; color: #67e8f9; white-space: pre; line-height: 1.4;'>{eq}</pre>")
 
-                # Panneau 3 : Graphical Analysis (avec conteneur et spinner initial)
-                with ui.tab_panel('Charts'):
-                    chart_container = ui.column().classes('w-full items-center justify-center py-8')
-                    with chart_container:
-                        ui.spinner(size='xl', color='emerald')
-                        ui.label('Rendering diagnostic plots...').classes('text-xs text-slate-400 mt-2 animate-pulse')
+                # Panneau 3 : Diagnostic graphique
+                with ui.tab_panel('t_diag'):
+                    b64_img = generate_summary_plots_base64(run_data)
+                    if b64_img:
+                        with ui.scroll_area().classes('w-full h-[62vh]'):
+                            ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl mx-auto rounded-lg shadow-xl')
+                    else:
+                        ui.label("No plots available or generation skipped.").classes('text-slate-400 p-4')
 
-    # Ouverture immédiate sur le panneau 'Report'
     dialog.open()
 
     # Tâche asynchrone en arrière-plan pour charger les graphiques sans bloquer l'ouverture ni les onglets 1 et 2
@@ -1209,122 +1162,91 @@ def main_page():
             
         sync_all_comboboxes()
 
-    async def view_main_data():
+    def view_main_data():
         if state.df is None:
             return ui.notify("No dataset loaded!", type='warning')
 
-        # Préparation rapide des colonnes numériques
-        num_df = state.df.select_dtypes(include=[np.number])
-        if num_df.empty:
-            num_df = state.df.apply(pd.to_numeric, errors='coerce').dropna(how='all', axis=1)
+        with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-[85vh] bg-slate-900 rounded-2xl text-white p-4 flex flex-col'):
+            with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
+                ui.label('Dataset Preview, Descriptive Statistics & Distributions').classes('text-md font-bold text-emerald-400')
+                ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
-        with ui.dialog() as dialog:
-            with ui.card().classes('w-11/12 max-w-5xl h-[85vh] bg-slate-900 rounded-2xl text-white p-4 flex flex-col'):
-                with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
-                    ui.label('Dataset Preview, Descriptive Statistics & Distributions').classes('text-md font-bold text-emerald-400')
-                    ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
+            with ui.tabs().classes('w-full shrink-0 text-slate-300') as view_tabs:
+                t_prev = ui.tab('t_preview', label='Preview (Top 50)')
+                t_stats = ui.tab('t_stats', label='Descriptive Statistics')
+                t_charts = ui.tab('t_charts', label='Distribution Plots')
 
-                # Définition des onglets par des chaînes directes
-                with ui.tabs().classes('w-full shrink-0 text-slate-300') as view_tabs:
-                    ui.tab('Preview', label='Preview (Top 50)')
-                    ui.tab('Stats', label='Descriptive Statistics')
-                    ui.tab('Charts', label='Distribution Plots')
+            with ui.tab_panels(view_tabs, value='t_preview').classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
+                
+                # Onglet 1 : Preview
+                with ui.tab_panel('t_preview'):
+                    clean_rows = [{str(k): (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v)) for k, v in record.items()} 
+                                  for record in state.df.head(50).fillna('—').to_dict('records')]
+                    with ui.scroll_area().classes('w-full h-[62vh]'):
+                        ui.table(
+                            columns=[{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'left'} for c in state.df.columns],
+                            rows=clean_rows,
+                            pagination={'rowsPerPage': 15}
+                        ).props('dense flat').classes('w-full bg-slate-950 text-xs')
 
-                with ui.tab_panels(view_tabs, value='Preview').classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
-                    
-                    # 1. PANNEAU PREVIEW
-                    with ui.tab_panel('Preview'):
-                        preview_cols = [{'name': c, 'label': c, 'field': c, 'align': 'left'} for c in state.df.columns]
-                        clean_rows = []
-                        for row in state.df.head(50).fillna('—').to_dict('records'):
-                            clean_rows.append({
-                                c: (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v))
-                                for c, v in row.items()
-                            })
-                        
-                        with ui.scroll_area().classes('w-full h-[60vh] border border-slate-800 rounded-xl'):
+                # Onglet 2 : Stats avec Obs (N)
+                with ui.tab_panel('t_stats'):
+                    num_df = state.df.select_dtypes(include=[np.number])
+                    if not num_df.empty:
+                        stats_df = num_df.describe().T[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
+                        stats_df.reset_index(inplace=True)
+                        stats_df['count'] = stats_df['count'].astype(int)
+                        stats_df.rename(columns={
+                            'index': 'Variable', 
+                            'count': 'Obs (N)', 
+                            '25%': 'Q1 (25%)', 
+                            '50%': 'Median', 
+                            '75%': 'Q3 (75%)'
+                        }, inplace=True)
+                        with ui.scroll_area().classes('w-full h-[62vh]'):
                             ui.table(
-                                columns=preview_cols,
-                                rows=clean_rows,
+                                columns=[{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'center'} for c in stats_df.columns],
+                                rows=stats_df.to_dict('records'),
                                 pagination={'rowsPerPage': 15}
                             ).props('dense flat').classes('w-full bg-slate-950 text-xs')
+                    else:
+                        ui.label('No numerical variables found.').classes('text-slate-400 p-4')
 
-                    # 2. PANNEAU STATISTIQUES DESCRIPTIVES
-                    with ui.tab_panel('Stats'):
-                        if not num_df.empty:
-                            stats_df = num_df.describe().T[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
-                            stats_df.reset_index(inplace=True)
-                            stats_df['count'] = stats_df['count'].astype(int)
-                            stats_df.rename(columns={
-                                'index': 'Variable', 
-                                'count': 'Obs (N)', 
-                                '25%': 'Q1 (25%)', 
-                                '50%': 'Median', 
-                                '75%': 'Q3 (75%)'
-                            }, inplace=True)
-                            
-                            stats_cols = [{'name': c, 'label': c, 'field': c, 'align': 'center'} for c in stats_df.columns]
-                            with ui.scroll_area().classes('w-full h-[60vh] border border-slate-800 rounded-xl'):
-                                ui.table(
-                                    columns=stats_cols,
-                                    rows=stats_df.to_dict('records'),
-                                    pagination={'rowsPerPage': 15}
-                                ).props('dense flat').classes('w-full bg-slate-950 text-xs')
-                        else:
-                            ui.label('No numerical variables found for descriptive statistics.').classes('text-slate-400 p-4')
+                # Onglet 3 : Distribution Plots (génération directe légère)
+                with ui.tab_panel('t_charts'):
+                    num_df = state.df.select_dtypes(include=[np.number])
+                    if not num_df.empty:
+                        cols_list = list(num_df.columns)[:12]
+                        n_cols_total = len(cols_list)
+                        n_rows_grid = int(np.ceil(n_cols_total / 3))
 
-                    with ui.tab_panel('Charts'):
-                        chart_container = ui.column().classes('w-full items-center justify-center py-8')
-                        with chart_container:
-                            ui.spinner(size='xl', color='emerald')
-                            ui.label('Rendering variable distributions...').classes('text-xs text-slate-400 mt-2 animate-pulse')
-                        
-                        b64_img = await run.io_bound(build_charts_image)
-                        chart_container.clear()
-                        
-                        with chart_container:
-                            if b64_img:
-                                with ui.scroll_area().classes('w-full h-[60vh]'):
-                                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full rounded-xl')
-                            else:
-                                ui.label('No numerical variables to plot.').classes('text-slate-400 p-4')
-                        
-                        def build_charts_image():
-                            cols_list = list(num_df.columns)[:12]  # Limité à 12 variables pour préserver la RAM
-                            n_cols_total = len(cols_list)
-                            if n_cols_total == 0:
-                                return None
-                            n_rows_grid = int(np.ceil(n_cols_total / 3))
-                            
-                            fig, axes = plt.subplots(n_rows_grid, 3, figsize=(10, max(2.8 * n_rows_grid, 3.5)), facecolor='#0f172a')
-                            axes = np.array(axes).flatten()
-                            
-                            for i, col in enumerate(cols_list):
-                                axes[i].hist(num_df[col].dropna(), bins=15, color='#38bdf8', edgecolor='white', alpha=0.8)
-                                axes[i].set_title(col[:18], color='white', fontsize=8, fontweight='bold')
-                                axes[i].set_facecolor('#1e293b')
-                                axes[i].tick_params(colors='white', labelsize=7)
-                                
-                            for j in range(n_cols_total, len(axes)):
-                                fig.delaxes(axes[j])
-                                
-                            fig.tight_layout(pad=2.0)
-                            buf = io.BytesIO()
-                            plt.savefig(buf, format='png', bbox_inches='tight', dpi=85)
-                            plt.close(fig)
-                            del fig, axes
-                            gc.collect()
-                            buf.seek(0)
-                            return base64.b64encode(buf.read()).decode('utf-8')
+                        fig, axes = plt.subplots(n_rows_grid, 3, figsize=(10, max(2.8 * n_rows_grid, 3.5)), facecolor='#0f172a')
+                        axes = np.array(axes).flatten()
 
-                        # Génération dans un thread d'arrière-plan sans bloquer l'UI
-                        b64_img = await run.io_bound(build_charts_image)
-                        with chart_container:
-                            if b64_img:
-                                with ui.scroll_area().classes('w-full h-[60vh]'):
-                                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full rounded-xl')
-                            else:
-                                ui.label('No numerical variables to plot.').classes('text-slate-400 p-4')
+                        for i, col in enumerate(cols_list):
+                            axes[i].hist(num_df[col].dropna(), bins=15, color='#38bdf8', edgecolor='white', alpha=0.8)
+                            axes[i].set_title(col[:18], color='white', fontsize=8, fontweight='bold')
+                            axes[i].set_facecolor('#1e293b')
+                            axes[i].tick_params(colors='white', labelsize=7)
+
+                        for j in range(n_cols_total, len(axes)):
+                            fig.delaxes(axes[j])
+
+                        fig.tight_layout(pad=2.0)
+                        buf = io.BytesIO()
+                        plt.savefig(buf, format='png', bbox_inches='tight', dpi=80)
+                        plt.close(fig)
+                        del fig, axes
+                        gc.collect()
+                        buf.seek(0)
+                        img_b64 = base64.b64encode(buf.read()).decode('utf-8')
+
+                        with ui.scroll_area().classes('w-full h-[62vh]'):
+                            ui.image(f'data:image/png;base64,{img_b64}').classes('w-full rounded-xl')
+                    else:
+                        ui.label('No numerical variables to plot.').classes('text-slate-400 p-4')
+
+            ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2 shrink-0')
 
         dialog.open()
 
@@ -1762,14 +1684,11 @@ def main_page():
                             '''
                         )
 
-                        async def on_open_report(e):
+                        def on_open_report(e):
                             raw_id = str(e.args) if not isinstance(e.args, str) else e.args
                             clean_id = raw_id.replace('⭐', '').replace('★', '').strip("[]'\" ")
-                            
                             if clean_id in state.run_history:
-                                # Affiche un indicateur de chargement immédiat
-                                notif = ui.notify(f"Loading report for {clean_id}...", type='info', spinner=True, timeout=1500)
-                                await show_summary_dialog(clean_id, state)
+                                show_summary_dialog(clean_id, state)
                             else:
                                 ui.notify(f"Run {clean_id} not found.", type='warning')
 
