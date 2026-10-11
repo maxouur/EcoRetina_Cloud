@@ -312,18 +312,6 @@ def show_summary_dialog(run_id, state):
                         ui.label("No plots available or generation skipped.").classes('text-slate-400 p-4')
 
     dialog.open()
-
-    # Tâche asynchrone en arrière-plan pour charger les graphiques sans bloquer l'ouverture ni les onglets 1 et 2
-    async def load_charts_async():
-        b64_img = await run.io_bound(generate_summary_plots_base64, run_data)
-        chart_container.clear()
-        with chart_container:
-            if b64_img:
-                ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl rounded-lg shadow-xl')
-            else:
-                ui.label("Failed to generate plots.").classes('text-red-400 text-sm')
-
-    background_tasks.create(load_charts_async())
     
 
 @app.head('/')
@@ -1172,16 +1160,17 @@ def main_page():
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
             with ui.tabs().classes('w-full shrink-0 text-slate-300') as view_tabs:
-                t_prev = ui.tab('t_preview', label='Preview (Top 50)')
+                t_prev = ui.tab('t_prev', label='Preview (Top 50)')
                 t_stats = ui.tab('t_stats', label='Descriptive Statistics')
                 t_charts = ui.tab('t_charts', label='Distribution Plots')
 
-            with ui.tab_panels(view_tabs, value='t_preview').classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
+            with ui.tab_panels(view_tabs, value='t_prev').classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
                 
-                # Onglet 1 : Preview
-                with ui.tab_panel('t_preview'):
+                # 1. Preview Top 50
+                with ui.tab_panel('t_prev'):
+                    preview_df = state.df.head(50).fillna('—')
                     clean_rows = [{str(k): (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v)) for k, v in record.items()} 
-                                  for record in state.df.head(50).fillna('—').to_dict('records')]
+                                  for record in preview_df.to_dict('records')]
                     with ui.scroll_area().classes('w-full h-[62vh]'):
                         ui.table(
                             columns=[{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'left'} for c in state.df.columns],
@@ -1189,7 +1178,7 @@ def main_page():
                             pagination={'rowsPerPage': 15}
                         ).props('dense flat').classes('w-full bg-slate-950 text-xs')
 
-                # Onglet 2 : Stats avec Obs (N)
+                # 2. Descriptive Statistics avec Obs (N)
                 with ui.tab_panel('t_stats'):
                     num_df = state.df.select_dtypes(include=[np.number])
                     if not num_df.empty:
@@ -1212,39 +1201,42 @@ def main_page():
                     else:
                         ui.label('No numerical variables found.').classes('text-slate-400 p-4')
 
-                # Onglet 3 : Distribution Plots (génération directe légère)
+                # 3. Distribution Plots (à la demande pour préserver la RAM)
                 with ui.tab_panel('t_charts'):
                     num_df = state.df.select_dtypes(include=[np.number])
                     if not num_df.empty:
-                        cols_list = list(num_df.columns)[:12]
-                        n_cols_total = len(cols_list)
-                        n_rows_grid = int(np.ceil(n_cols_total / 3))
+                        cols = list(num_df.columns)
+                        chart_box = ui.column().classes('w-full items-center')
 
-                        fig, axes = plt.subplots(n_rows_grid, 3, figsize=(10, max(2.8 * n_rows_grid, 3.5)), facecolor='#0f172a')
-                        axes = np.array(axes).flatten()
+                        def render_single_histogram(var_name):
+                            chart_box.clear()
+                            if not var_name or var_name not in num_df.columns:
+                                return
+                            with chart_box:
+                                fig, ax = plt.subplots(figsize=(7, 3.2), facecolor='#0f172a')
+                                ax.hist(num_df[var_name].dropna(), bins=20, color='#38bdf8', edgecolor='white', alpha=0.85)
+                                ax.set_title(f'Distribution: {var_name}', color='white', fontsize=11, fontweight='bold')
+                                ax.set_facecolor('#1e293b')
+                                ax.tick_params(colors='white', labelsize=8)
+                                fig.tight_layout(pad=1.5)
+                                
+                                buf = io.BytesIO()
+                                fig.savefig(buf, format='png', bbox_inches='tight', dpi=85)
+                                plt.close(fig)
+                                del fig, ax
+                                gc.collect()
+                                buf.seek(0)
+                                b64 = base64.b64encode(buf.read()).decode('utf-8')
+                                ui.image(f'data:image/png;base64,{b64}').classes('w-full max-w-xl rounded-xl shadow-lg mt-2')
 
-                        for i, col in enumerate(cols_list):
-                            axes[i].hist(num_df[col].dropna(), bins=15, color='#38bdf8', edgecolor='white', alpha=0.8)
-                            axes[i].set_title(col[:18], color='white', fontsize=8, fontweight='bold')
-                            axes[i].set_facecolor('#1e293b')
-                            axes[i].tick_params(colors='white', labelsize=7)
-
-                        for j in range(n_cols_total, len(axes)):
-                            fig.delaxes(axes[j])
-
-                        fig.tight_layout(pad=2.0)
-                        buf = io.BytesIO()
-                        plt.savefig(buf, format='png', bbox_inches='tight', dpi=80)
-                        plt.close(fig)
-                        del fig, axes
-                        gc.collect()
-                        buf.seek(0)
-                        img_b64 = base64.b64encode(buf.read()).decode('utf-8')
-
-                        with ui.scroll_area().classes('w-full h-[62vh]'):
-                            ui.image(f'data:image/png;base64,{img_b64}').classes('w-full rounded-xl')
+                        with ui.row().classes('items-center gap-4 mb-2'):
+                            ui.label('Select Variable:').classes('text-sm text-slate-300 font-semibold')
+                            sel = ui.select(options=cols, value=cols[0], on_change=lambda e: render_single_histogram(e.value)).classes('w-60 bg-slate-800 rounded-lg text-white')
+                        
+                        # Affiche le premier histogramme par défaut
+                        render_single_histogram(cols[0])
                     else:
-                        ui.label('No numerical variables to plot.').classes('text-slate-400 p-4')
+                        ui.label('No numerical variables available to plot.').classes('text-slate-400 p-4')
 
             ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2 shrink-0')
 
