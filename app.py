@@ -1182,112 +1182,111 @@ def main_page():
             
         sync_all_comboboxes()
 
-    def view_main_data():
-        if state.df is None: 
+    async def view_main_data():
+        if state.df is None:
             return ui.notify("No dataset loaded!", type='warning')
-        
-        with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white p-4 flex flex-col'):
-            ui.label('Dataset Preview, Descriptive Statistics & Distributions').classes('text-md font-bold text-emerald-400 mb-2 shrink-0')
-            
-            with ui.tabs().classes('w-full shrink-0') as view_tabs:
-                t_prev = ui.tab('Preview (Top 50)')
-                t_stats = ui.tab('Descriptive Statistics')
-                t_charts = ui.tab('Distribution Plots')
-                
-            with ui.tab_panels(view_tabs, value=t_prev).classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
-                
-                # Panneau 1 : Preview (Top 50) avec scroll horizontal et pagination débloquée
-                with ui.tab_panel(t_prev):
-                    # Préparation des colonnes Quasar avec alignement et formatage sécurisé
-                    table_cols = [
-                        {
-                            'name': str(c),
-                            'label': str(c),
-                            'field': str(c),
-                            'align': 'left',
-                            'sortable': True
-                        }
-                        for c in state.df.columns
-                    ]
-                    
-                    # Remplacement des NaN et formatage propre
-                    preview_df = state.df.head(50).fillna("—")
-                    clean_rows = []
-                    for row in preview_df.to_dict('records'):
-                        clean_rows.append({
-                            str(k): (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v))
-                            for k, v in row.items()
-                        })
 
-                    # Zone scrollable horizontalement et verticalement
-                    with ui.scroll_area().classes('w-full h-[62vh] rounded-xl border border-slate-800'):
-                        ui.table(
-                            columns=table_cols,
-                            rows=clean_rows,
-                            pagination={'rowsPerPage': 25}
-                        ).props('dense flat square virtual-scroll').classes('w-full bg-slate-950 text-slate-200 text-xs')
-                    
-                # Panneau 2 : Descriptive Stats (avec Obs N)
-                with ui.tab_panel(t_stats):
-                    # Forcer la détection numérique même si lues en texte
-                    num_df = state.df.apply(pd.to_numeric, errors='coerce').dropna(how='all', axis=1)
-                    
-                    if not num_df.empty:
-                        stats_df = num_df.describe().T[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
-                        stats_df.reset_index(inplace=True)
-                        stats_df['count'] = stats_df['count'].astype(int)
-                        stats_df.rename(columns={
-                            'index': 'Variable', 
-                            'count': 'Obs (N)', 
-                            '25%': 'Q1 (25%)', 
-                            '50%': 'Median', 
-                            '75%': 'Q3 (75%)'
-                        }, inplace=True)
-                        ui.table(
-                            columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in stats_df.columns],
-                            rows=stats_df.to_dict('records')
-                        ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
-                    else:
-                        ui.label('No numeric variables found in dataset.').classes('text-slate-400 p-4')
-                        
-                # Panneau 3 : Distribution Plots
-                with ui.tab_panel(t_charts):
-                    num_df = state.df.apply(pd.to_numeric, errors='coerce').dropna(how='all', axis=1)
-                    if not num_df.empty:
-                        cols_list = list(num_df.columns)[:15]  # Plafonné à 15 pour éviter les crashs RAM
-                        n_cols_total = len(cols_list)
-                        n_rows_grid = int(np.ceil(n_cols_total / 3))
-                        
-                        fig, axes = plt.subplots(n_rows_grid, 3, figsize=(10, max(3.0 * n_rows_grid, 4)), facecolor='#0f172a')
-                        axes = np.array(axes).flatten()
-                        
-                        for i, col in enumerate(cols_list):
-                            axes[i].hist(num_df[col].dropna(), bins=15, color='#38bdf8', edgecolor='white', alpha=0.8)
-                            axes[i].set_title(col[:20], color='white', fontsize=8, fontweight='bold')
-                            axes[i].set_facecolor('#1e293b')
-                            axes[i].tick_params(colors='white', labelsize=7)
-                            
-                        for j in range(n_cols_total, len(axes)):
-                            fig.delaxes(axes[j])
-                            
-                        fig.tight_layout(pad=2.0)
-                        
-                        buf = io.BytesIO()
-                        plt.savefig(buf, format='png', bbox_inches='tight', dpi=90)
-                        plt.close(fig)
-                        del fig, axes
-                        gc.collect()
-                        
-                        buf.seek(0)
-                        img_b64 = base64.b64encode(buf.read()).decode('utf-8')
-                        
-                        with ui.scroll_area().classes('w-full h-[55vh]'):
-                            ui.image(f'data:image/png;base64,{img_b64}').classes('w-full rounded-xl')
-                    else:
-                        ui.label('No numeric variables available for distribution plots.').classes('text-slate-400 p-4')
+        # Préparation rapide des colonnes numériques
+        num_df = state.df.select_dtypes(include=[np.number])
+        if num_df.empty:
+            num_df = state.df.apply(pd.to_numeric, errors='coerce').dropna(how='all', axis=1)
 
-            ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2 shrink-0')
-            
+        with ui.dialog() as dialog:
+            with ui.card().classes('w-11/12 max-w-5xl h-[85vh] bg-slate-900 rounded-2xl text-white p-4 flex flex-col'):
+                with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
+                    ui.label('Dataset Preview, Descriptive Statistics & Distributions').classes('text-md font-bold text-emerald-400')
+                    ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
+
+                # Définition des onglets par des chaînes directes
+                with ui.tabs().classes('w-full shrink-0 text-slate-300') as view_tabs:
+                    ui.tab('Preview', label='Preview (Top 50)')
+                    ui.tab('Stats', label='Descriptive Statistics')
+                    ui.tab('Charts', label='Distribution Plots')
+
+                with ui.tab_panels(view_tabs, value='Preview').classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
+                    
+                    # 1. PANNEAU PREVIEW
+                    with ui.tab_panel('Preview'):
+                        preview_cols = [{'name': c, 'label': c, 'field': c, 'align': 'left'} for c in state.df.columns]
+                        clean_rows = []
+                        for row in state.df.head(50).fillna('—').to_dict('records'):
+                            clean_rows.append({
+                                c: (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v))
+                                for c, v in row.items()
+                            })
+                        
+                        with ui.scroll_area().classes('w-full h-[60vh] border border-slate-800 rounded-xl'):
+                            ui.table(
+                                columns=preview_cols,
+                                rows=clean_rows,
+                                pagination={'rowsPerPage': 15}
+                            ).props('dense flat').classes('w-full bg-slate-950 text-xs')
+
+                    # 2. PANNEAU STATISTIQUES DESCRIPTIVES
+                    with ui.tab_panel('Stats'):
+                        if not num_df.empty:
+                            stats_df = num_df.describe().T[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
+                            stats_df.reset_index(inplace=True)
+                            stats_df['count'] = stats_df['count'].astype(int)
+                            stats_df.rename(columns={
+                                'index': 'Variable', 
+                                'count': 'Obs (N)', 
+                                '25%': 'Q1 (25%)', 
+                                '50%': 'Median', 
+                                '75%': 'Q3 (75%)'
+                            }, inplace=True)
+                            
+                            stats_cols = [{'name': c, 'label': c, 'field': c, 'align': 'center'} for c in stats_df.columns]
+                            with ui.scroll_area().classes('w-full h-[60vh] border border-slate-800 rounded-xl'):
+                                ui.table(
+                                    columns=stats_cols,
+                                    rows=stats_df.to_dict('records'),
+                                    pagination={'rowsPerPage': 15}
+                                ).props('dense flat').classes('w-full bg-slate-950 text-xs')
+                        else:
+                            ui.label('No numerical variables found for descriptive statistics.').classes('text-slate-400 p-4')
+
+                    # 3. PANNEAU DISTRIBUTION PLOTS (Génération fluide)
+                    with ui.tab_panel('Charts'):
+                        chart_container = ui.column().classes('w-full items-center justify-center')
+                        
+                        def build_charts_image():
+                            cols_list = list(num_df.columns)[:12]  # Limité à 12 variables pour préserver la RAM
+                            n_cols_total = len(cols_list)
+                            if n_cols_total == 0:
+                                return None
+                            n_rows_grid = int(np.ceil(n_cols_total / 3))
+                            
+                            fig, axes = plt.subplots(n_rows_grid, 3, figsize=(10, max(2.8 * n_rows_grid, 3.5)), facecolor='#0f172a')
+                            axes = np.array(axes).flatten()
+                            
+                            for i, col in enumerate(cols_list):
+                                axes[i].hist(num_df[col].dropna(), bins=15, color='#38bdf8', edgecolor='white', alpha=0.8)
+                                axes[i].set_title(col[:18], color='white', fontsize=8, fontweight='bold')
+                                axes[i].set_facecolor('#1e293b')
+                                axes[i].tick_params(colors='white', labelsize=7)
+                                
+                            for j in range(n_cols_total, len(axes)):
+                                fig.delaxes(axes[j])
+                                
+                            fig.tight_layout(pad=2.0)
+                            buf = io.BytesIO()
+                            plt.savefig(buf, format='png', bbox_inches='tight', dpi=85)
+                            plt.close(fig)
+                            del fig, axes
+                            gc.collect()
+                            buf.seek(0)
+                            return base64.b64encode(buf.read()).decode('utf-8')
+
+                        # Génération dans un thread d'arrière-plan sans bloquer l'UI
+                        b64_img = await run.io_bound(build_charts_image)
+                        with chart_container:
+                            if b64_img:
+                                with ui.scroll_area().classes('w-full h-[60vh]'):
+                                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full rounded-xl')
+                            else:
+                                ui.label('No numerical variables to plot.').classes('text-slate-400 p-4')
+
         dialog.open()
 
     def apply_undo():
