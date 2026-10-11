@@ -1034,21 +1034,28 @@ def main_page():
             state.log(f"Failed to load inference dataset: {str(ex)}")
 
     def persist_session_state():
-        """Sauvegarde automatique dans app.storage.user (persistance NiceGUI)."""
         try:
             stored_runs = []
             for r_id, r_data in state.run_history.items():
                 m = r_data.get('metrics', {})
+                clean_metrics = {}
+                for k, v in m.items():
+                    if isinstance(v, (np.floating, float)):
+                        clean_metrics[k] = float(v) if not np.isnan(v) else 0.0
+                    elif isinstance(v, (np.integer, int)):
+                        clean_metrics[k] = int(v)
+                    elif isinstance(v, str):
+                        clean_metrics[k] = v
+
                 stored_runs.append({
-                    'run_id': r_id,
-                    'algo': r_data.get('model_name'),
-                    'target_col': r_data.get('target_col'),
-                    'raw_features': r_data.get('raw_features', []),
-                    'metrics': {k: v for k, v in m.items() if isinstance(v, (int, float, str))}
+                    'run_id': str(r_id),
+                    'algo': str(r_data.get('model_name')),
+                    'target_col': str(r_data.get('target_col')),
+                    'metrics': clean_metrics
                 })
             app.storage.user['saved_runs'] = stored_runs
         except Exception as ex:
-            print(f"[STORAGE WARNING] Failed to auto-save: {ex}")
+            print(f"[STORAGE WARNING] Auto-save skipped: {ex}")
 
     def export_full_session_json():
         """Télécharge un fichier JSON contenant tous les benchmarks et métriques."""
@@ -1197,27 +1204,31 @@ def main_page():
             with ui.tab_panel('t_charts'):
                 num_df = state.df.select_dtypes(include=[np.number])
                 if not num_df.empty:
-                    cols_list = list(num_df.columns)
+                    # Limited to first 15 numeric variables for performance reasons
+                    cols_list = list(num_df.columns)[:15]
                     n_cols_total = len(cols_list)
                     n_rows_grid = int(np.ceil(n_cols_total / 3))
-                    
-                    fig, axes = plt.subplots(n_rows_grid, 3, figsize=(11, max(3.5 * n_rows_grid, 4)), facecolor='#0f172a')
+
+                    fig, axes = plt.subplots(n_rows_grid, 3, figsize=(10, max(3.0 * n_rows_grid, 4)), facecolor='#0f172a')
                     axes = np.array(axes).flatten()
-                    
+
                     for i, col in enumerate(cols_list):
-                        axes[i].hist(num_df[col].dropna(), bins=20, color='#38bdf8', edgecolor='white', alpha=0.8)
-                        axes[i].set_title(col, color='white', fontsize=9, fontweight='bold')
+                        axes[i].hist(num_df[col].dropna(), bins=15, color='#38bdf8', edgecolor='white', alpha=0.8)
+                        axes[i].set_title(col[:20], color='white', fontsize=8, fontweight='bold')
                         axes[i].set_facecolor('#1e293b')
                         axes[i].tick_params(colors='white', labelsize=7)
-                        
+
                     for j in range(n_cols_total, len(axes)):
                         fig.delaxes(axes[j])
-                        
-                    fig.tight_layout(pad=2.5)
-                    
+
+                    fig.tight_layout(pad=2.0)
+
                     buf = io.BytesIO()
-                    plt.savefig(buf, format='png', bbox_inches='tight', dpi=110)
+                    plt.savefig(buf, format='png', bbox_inches='tight', dpi=90)  # dpi réduit de 120 à 90 pour économiser la RAM
                     plt.close(fig)
+                    del fig, axes
+                    gc.collect()
+
                     buf.seek(0)
                     img_b64 = base64.b64encode(buf.read()).decode('utf-8')
                     
