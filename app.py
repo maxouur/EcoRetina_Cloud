@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import io
 import base64
 
-from nicegui import ui, run, app
+from nicegui import background_tasks, ui, run, app
 from codecarbon import EmissionsTracker
 
 # --- ALGORITHMES ET IMPORTS MACHINE LEARNING ---
@@ -316,7 +316,7 @@ async def show_summary_dialog(run_id, state):
 
     full_report_text = "\n".join(summary_lines)
 
-    # Fenêtre modale avec génération graphique non-bloquante
+    # Construction de la modale
     with ui.dialog() as dialog:
         with ui.card().classes(
             'w-11/12 max-w-4xl h-[85vh] bg-slate-900 border border-slate-700 text-slate-100 '
@@ -326,6 +326,7 @@ async def show_summary_dialog(run_id, state):
                 ui.label(f"Detailed Analysis - {run_id} ({model_name})").classes('text-base font-bold text-emerald-400')
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
+            # Déclaration explicite des onglets (exactement comme dans visualize dataset)
             with ui.tabs().classes('w-full text-slate-300 shrink-0') as tabs:
                 ui.tab('Report', label='Statistical Report')
                 ui.tab('Formula', label='Visual Formula')
@@ -333,35 +334,44 @@ async def show_summary_dialog(run_id, state):
 
             with ui.tab_panels(tabs, value='Report').classes('w-full bg-slate-950 p-4 rounded-xl flex-grow overflow-auto mt-2'):
                 
-                # Onglet 1 : Rapport texte (instantané)
+                # Panneau 1 : Statistical Report (actif par défaut)
                 with ui.tab_panel('Report'):
-                    ui.html(
-                        f"<pre style='margin:0; font-family: monospace; font-size: 11px; "
-                        f"color: #6ee7b7; white-space: pre; line-height: 1.4;'>{full_report_text}</pre>"
-                    )
+                    with ui.scroll_area().classes('w-full h-[62vh]'):
+                        ui.html(
+                            f"<pre style='margin:0; font-family: monospace; font-size: 11px; "
+                            f"color: #6ee7b7; white-space: pre; line-height: 1.4;'>{full_report_text}</pre>"
+                        )
 
-                # Onglet 2 : Formule
+                # Panneau 2 : Visual Formula
                 with ui.tab_panel('Formula'):
-                    ui.html(
-                        f"<pre style='margin:0; font-family: monospace; font-size: 12px; "
-                        f"color: #67e8f9; white-space: pre; line-height: 1.4;'>{eq}</pre>"
-                    )
+                    with ui.scroll_area().classes('w-full h-[62vh]'):
+                        ui.html(
+                            f"<pre style='margin:0; font-family: monospace; font-size: 12px; "
+                            f"color: #67e8f9; white-space: pre; line-height: 1.4;'>{eq}</pre>"
+                        )
 
-                # Onglet 3 : Graphiques générés en tâche de fond (run.io_bound)
+                # Panneau 3 : Graphical Analysis (avec conteneur et spinner initial)
                 with ui.tab_panel('Charts'):
-                    chart_area = ui.column().classes('w-full items-center justify-center')
-                    with chart_area:
-                        spinner = ui.spinner(size='lg', color='emerald')
-                    
-                    b64_img = await run.io_bound(generate_summary_plots_base64, run_data)
-                    chart_area.clear()
-                    with chart_area:
-                        if b64_img:
-                            ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl rounded-lg shadow-xl')
-                        else:
-                            ui.label("Failed to generate plots.").classes('text-red-400')
+                    chart_container = ui.column().classes('w-full items-center justify-center py-8')
+                    with chart_container:
+                        ui.spinner(size='xl', color='emerald')
+                        ui.label('Rendering diagnostic plots...').classes('text-xs text-slate-400 mt-2 animate-pulse')
 
+    # Ouverture immédiate sur le panneau 'Report'
     dialog.open()
+
+    # Tâche asynchrone en arrière-plan pour charger les graphiques sans bloquer l'ouverture ni les onglets 1 et 2
+    async def load_charts_async():
+        b64_img = await run.io_bound(generate_summary_plots_base64, run_data)
+        chart_container.clear()
+        with chart_container:
+            if b64_img:
+                ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl rounded-lg shadow-xl')
+            else:
+                ui.label("Failed to generate plots.").classes('text-red-400 text-sm')
+
+    background_tasks.create(load_charts_async())
+    
 
 @app.head('/')
 def read_head():
@@ -1263,9 +1273,21 @@ def main_page():
                         else:
                             ui.label('No numerical variables found for descriptive statistics.').classes('text-slate-400 p-4')
 
-                    # 3. PANNEAU DISTRIBUTION PLOTS (Génération fluide)
                     with ui.tab_panel('Charts'):
-                        chart_container = ui.column().classes('w-full items-center justify-center')
+                        chart_container = ui.column().classes('w-full items-center justify-center py-8')
+                        with chart_container:
+                            ui.spinner(size='xl', color='emerald')
+                            ui.label('Rendering variable distributions...').classes('text-xs text-slate-400 mt-2 animate-pulse')
+                        
+                        b64_img = await run.io_bound(build_charts_image)
+                        chart_container.clear()
+                        
+                        with chart_container:
+                            if b64_img:
+                                with ui.scroll_area().classes('w-full h-[60vh]'):
+                                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full rounded-xl')
+                            else:
+                                ui.label('No numerical variables to plot.').classes('text-slate-400 p-4')
                         
                         def build_charts_image():
                             cols_list = list(num_df.columns)[:12]  # Limité à 12 variables pour préserver la RAM
@@ -1743,7 +1765,10 @@ def main_page():
                         async def on_open_report(e):
                             raw_id = str(e.args) if not isinstance(e.args, str) else e.args
                             clean_id = raw_id.replace('⭐', '').replace('★', '').strip("[]'\" ")
+                            
                             if clean_id in state.run_history:
+                                # Affiche un indicateur de chargement immédiat
+                                notif = ui.notify(f"Loading report for {clean_id}...", type='info', spinner=True, timeout=1500)
                                 await show_summary_dialog(clean_id, state)
                             else:
                                 ui.notify(f"Run {clean_id} not found.", type='warning')
