@@ -1196,13 +1196,36 @@ def main_page():
                 
             with ui.tab_panels(view_tabs, value=t_prev).classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
                 
-                # Panneau 1 : Preview
+                # Panneau 1 : Preview (Top 50) avec scroll horizontal et pagination débloquée
                 with ui.tab_panel(t_prev):
-                    clean_rows = [{str(k): str(v) for k, v in record.items()} for record in state.df.head(50).to_dict('records')]
-                    ui.table(
-                        columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in state.df.columns],
-                        rows=clean_rows
-                    ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+                    # Préparation des colonnes Quasar avec alignement et formatage sécurisé
+                    table_cols = [
+                        {
+                            'name': str(c),
+                            'label': str(c),
+                            'field': str(c),
+                            'align': 'left',
+                            'sortable': True
+                        }
+                        for c in state.df.columns
+                    ]
+                    
+                    # Remplacement des NaN et formatage propre
+                    preview_df = state.df.head(50).fillna("—")
+                    clean_rows = []
+                    for row in preview_df.to_dict('records'):
+                        clean_rows.append({
+                            str(k): (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v))
+                            for k, v in row.items()
+                        })
+
+                    # Zone scrollable horizontalement et verticalement
+                    with ui.scroll_area().classes('w-full h-[62vh] rounded-xl border border-slate-800'):
+                        ui.table(
+                            columns=table_cols,
+                            rows=clean_rows,
+                            pagination={'rowsPerPage': 25}
+                        ).props('dense flat square virtual-scroll').classes('w-full bg-slate-950 text-slate-200 text-xs')
                     
                 # Panneau 2 : Descriptive Stats (avec Obs N)
                 with ui.tab_panel(t_stats):
