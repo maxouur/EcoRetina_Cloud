@@ -42,83 +42,93 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 # =========================
 
 def generate_summary_plots_base64(run_data):
-    # Conversion forcée en numpy array pour permettre les opérations mathématiques vectorielles
-    y_test = np.asarray(run_data['y_test'], dtype=np.float64)
-    y_test_pred = np.asarray(run_data['y_test_pred'], dtype=np.float64)
-    
-    metrics = run_data['metrics']
-    model_name = run_data['model_name']
-    data_rows = run_data.get('data_rows', [])
-    elasticity_data = run_data.get('elasticity_data', [])
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4), facecolor='#0f172a')
-    fig.tight_layout(pad=4.0)
-    
-    # 1. Actual vs Predicted
-    axes[0].scatter(y_test, y_test_pred, alpha=0.6, color='#38bdf8', label='Points')
-    min_v, max_v = float(np.min(y_test)), float(np.max(y_test))
-    axes[0].plot([min_v, max_v], [min_v, max_v], color='#22c55e', linestyle='--', label='Fit idéal')
-    std_resid = np.std(y_test - y_test_pred)
-    x_line = np.linspace(min_v, max_v, 100)
-    axes[0].fill_between(x_line, x_line - 1.96 * std_resid, x_line + 1.96 * std_resid, color='#22c55e', alpha=0.15, label='95% CI')
-    axes[0].set_title('Actual vs Predicted (Test Set)', color='white')
-    axes[0].set_xlabel('Actual', color='white')
-    axes[0].set_ylabel('Predicted', color='white')
-    axes[0].tick_params(colors='white')
-    axes[0].set_facecolor('#1e293b')
-    axes[0].legend(facecolor='#0f172a', edgecolor='none', labelcolor='white', loc='upper left', fontsize=8)
-
-    # 2. Residuals Distribution
-    residuals = y_test - y_test_pred
-    axes[1].hist(residuals, bins=20, color='#ef4444', alpha=0.7, edgecolor='white')
-    axes[1].set_title('Residuals Distribution', color='white')
-    axes[1].set_xlabel('Residual', color='white')
-    axes[1].tick_params(colors='white')
-    axes[1].set_facecolor('#1e293b')
-    p_val = metrics.get('norm_p_val', float('nan'))
-    axes[1].text(0.95, 0.95, f"P-Value: {p_val:.4f}" if not np.isnan(p_val) else "P-Value: N/A", 
-                 transform=axes[1].transAxes, color='white', fontsize=10, ha='right', va='top', 
-                 bbox=dict(facecolor='#0f172a', alpha=0.8, edgecolor='none'))
-
-    # 3. Top Features / Elasticities
-    plot_data = [d for d in data_rows if d["Variable"] != "const"]
-    val_key = "Importance" if len(plot_data) > 0 and "Importance" in plot_data[0] else "Coefficient" if len(plot_data) > 0 else None
+    try:
+        y_test = np.asarray(run_data['y_test'], dtype=np.float64)
+        y_test_pred = np.asarray(run_data['y_test_pred'], dtype=np.float64)
         
-    if val_key:
-        top_feats = sorted(plot_data, key=lambda x: abs(x[val_key]), reverse=True)[:10]
-        y_labels = [(d["Variable"][:15] + "..") if len(d["Variable"]) > 15 else d["Variable"] for d in top_feats][::-1]
-        x_vals = [d[val_key] for d in top_feats][::-1]
-        colors = ['#22c55e' if v >= 0 else '#ef4444' for v in x_vals]
-        axes[2].barh(y_labels, x_vals, color=colors)
-        axes[2].set_title(f"Top 10 Variables ({model_name})", color='white')
-        axes[2].tick_params(colors='white')
-        axes[2].set_facecolor('#1e293b')
-    elif model_name == 'EcoRETINA' and len(elasticity_data) > 0:
-        top_elast = sorted(elasticity_data, key=lambda x: abs(x["Elasticity"]), reverse=True)[:10]
-        y_labels = [(d["Variable"][:15] + "..") if len(d["Variable"]) > 15 else d["Variable"] for d in top_elast][::-1]
-        e_vals = [d["Elasticity"] for d in top_elast][::-1]
-        colors = ['#22c55e' if v >= 0 else '#ef4444' for v in e_vals]
-        axes[2].barh(y_labels, e_vals, color=colors)
-        axes[2].axvline(x=0, color='white', linestyle=':', alpha=0.6)
-        axes[2].set_title('Top 10 Elasticities (%)', color='white')
-        axes[2].set_xlabel('% Change in Y for +1% in X', color='white')
-        axes[2].tick_params(colors='white')
-        axes[2].set_facecolor('#1e293b')
-    else:
-        axes[2].text(0.5, 0.5, "No Feature Data Available", color='white', ha='center', va='center')
-        axes[2].set_facecolor('#1e293b')
-        axes[2].axis('off')
+        metrics = run_data['metrics']
+        model_name = run_data['model_name']
+        data_rows = run_data.get('data_rows', [])
+        elasticity_data = run_data.get('elasticity_data', [])
 
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', bbox_inches='tight', dpi=120)
-    plt.close(fig)
-    del fig, axes
-    import gc
-    gc.collect()
-    
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode('utf-8')
+        # Échantillonnage si trop de points pour ne pas saturer la RAM de Render
+        n_pts = len(y_test)
+        if n_pts > 1000:
+            idx_sample = np.random.choice(n_pts, 1000, replace=False)
+            y_test_plot = y_test[idx_sample]
+            y_test_pred_plot = y_test_pred[idx_sample]
+        else:
+            y_test_plot = y_test
+            y_test_pred_plot = y_test_pred
 
+        fig, axes = plt.subplots(1, 3, figsize=(13, 3.8), facecolor='#0f172a')
+        
+        # 1. Actual vs Predicted
+        axes[0].scatter(y_test_plot, y_test_pred_plot, alpha=0.5, color='#38bdf8', s=18, label='Points')
+        min_v, max_v = float(np.min(y_test)), float(np.max(y_test))
+        axes[0].plot([min_v, max_v], [min_v, max_v], color='#22c55e', linestyle='--', label='Fit idéal')
+        std_resid = float(np.std(y_test - y_test_pred))
+        x_line = np.linspace(min_v, max_v, 100)
+        axes[0].fill_between(x_line, x_line - 1.96 * std_resid, x_line + 1.96 * std_resid, color='#22c55e', alpha=0.15, label='95% CI')
+        axes[0].set_title('Actual vs Predicted (Test)', color='white', fontsize=10, fontweight='bold')
+        axes[0].set_xlabel('Actual', color='white', fontsize=9)
+        axes[0].set_ylabel('Predicted', color='white', fontsize=9)
+        axes[0].tick_params(colors='white', labelsize=8)
+        axes[0].set_facecolor('#1e293b')
+        axes[0].legend(facecolor='#0f172a', edgecolor='none', labelcolor='white', loc='upper left', fontsize=7)
+
+        # 2. Residuals Distribution
+        residuals = y_test - y_test_pred
+        axes[1].hist(residuals, bins=20, color='#ef4444', alpha=0.7, edgecolor='white')
+        axes[1].set_title('Residuals Distribution', color='white', fontsize=10, fontweight='bold')
+        axes[1].set_xlabel('Residual', color='white', fontsize=9)
+        axes[1].tick_params(colors='white', labelsize=8)
+        axes[1].set_facecolor('#1e293b')
+        p_val = metrics.get('norm_p_val', float('nan'))
+        axes[1].text(0.95, 0.95, f"P-Val: {p_val:.4f}" if (p_val is not None and not np.isnan(p_val)) else "P-Val: N/A", 
+                     transform=axes[1].transAxes, color='white', fontsize=8, ha='right', va='top', 
+                     bbox=dict(facecolor='#0f172a', alpha=0.8, edgecolor='none'))
+
+        # 3. Top Features / Elasticities
+        plot_data = [d for d in data_rows if d.get("Variable") != "const"]
+        val_key = "Importance" if (len(plot_data) > 0 and "Importance" in plot_data[0]) else "Coefficient" if len(plot_data) > 0 else None
+            
+        if val_key:
+            top_feats = sorted(plot_data, key=lambda x: abs(x.get(val_key, 0)), reverse=True)[:10]
+            y_labels = [(d["Variable"][:14] + "..") if len(d["Variable"]) > 14 else d["Variable"] for d in top_feats][::-1]
+            x_vals = [d[val_key] for d in top_feats][::-1]
+            colors = ['#22c55e' if v >= 0 else '#ef4444' for v in x_vals]
+            axes[2].barh(y_labels, x_vals, color=colors)
+            axes[2].set_title(f"Top 10 ({model_name})", color='white', fontsize=10, fontweight='bold')
+            axes[2].tick_params(colors='white', labelsize=8)
+            axes[2].set_facecolor('#1e293b')
+        elif model_name == 'EcoRETINA' and len(elasticity_data) > 0:
+            top_elast = sorted(elasticity_data, key=lambda x: abs(x.get("Elasticity", 0)), reverse=True)[:10]
+            y_labels = [(d["Variable"][:14] + "..") if len(d["Variable"]) > 14 else d["Variable"] for d in top_elast][::-1]
+            e_vals = [d["Elasticity"] for d in top_elast][::-1]
+            colors = ['#22c55e' if v >= 0 else '#ef4444' for v in e_vals]
+            axes[2].barh(y_labels, e_vals, color=colors)
+            axes[2].axvline(x=0, color='white', linestyle=':', alpha=0.6)
+            axes[2].set_title('Top 10 Elasticities (%)', color='white', fontsize=10, fontweight='bold')
+            axes[2].tick_params(colors='white', labelsize=8)
+            axes[2].set_facecolor('#1e293b')
+        else:
+            axes[2].text(0.5, 0.5, "No Feature Data", color='white', ha='center', va='center')
+            axes[2].set_facecolor('#1e293b')
+            axes[2].axis('off')
+
+        fig.tight_layout(pad=2.0)
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', dpi=85)  # DPI abaissé pour préserver la RAM
+        plt.close(fig)
+        del fig, axes
+        gc.collect()
+        
+        buf.seek(0)
+        return base64.b64encode(buf.read()).decode('utf-8')
+    except Exception as e:
+        print(f"[PLOT ERROR] generate_summary_plots_base64: {e}")
+        return None
 
 def generate_prediction_plot_base64(y_true, y_pred, target_name):
     y_true = np.asarray(y_true, dtype=np.float64)
@@ -163,7 +173,7 @@ def generate_prediction_plot_base64(y_true, y_pred, target_name):
     buf.seek(0)
     return base64.b64encode(buf.read()).decode('utf-8')
 
-def handle_table_row_click(event, state):
+async def handle_table_row_click(event, state):
     args = getattr(event, 'args', None)
     run_id = None
 
@@ -178,11 +188,11 @@ def handle_table_row_click(event, state):
     if run_id:
         clean_id = str(run_id).replace('⭐', '').replace('★', '').strip()
         if clean_id in state.run_history:
-            show_summary_dialog(clean_id, state)
+            await show_summary_dialog(clean_id, state)
         else:
             ui.notify(f"Run {clean_id} not found in history.", type='warning')
 
-def show_summary_dialog(run_id, state):
+async def show_summary_dialog(run_id, state):
     run_data = state.run_history.get(run_id)
     if not run_data:
         return ui.notify(f"Run {run_id} not found.", type='warning')
@@ -306,10 +316,10 @@ def show_summary_dialog(run_id, state):
 
     full_report_text = "\n".join(summary_lines)
 
-    # Fenêtre de dialogue NiceGUI
+    # Fenêtre modale avec génération graphique non-bloquante
     with ui.dialog() as dialog:
         with ui.card().classes(
-            'w-11/12 max-w-4xl max-h-[88vh] bg-slate-900 border border-slate-700 text-slate-100 '
+            'w-11/12 max-w-4xl h-[85vh] bg-slate-900 border border-slate-700 text-slate-100 '
             'flex flex-col mx-auto p-4 rounded-2xl shadow-2xl overflow-hidden'
         ):
             with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
@@ -317,34 +327,41 @@ def show_summary_dialog(run_id, state):
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
             with ui.tabs().classes('w-full text-slate-300 shrink-0') as tabs:
-                t1 = ui.tab('Statistical Report')
-                t2 = ui.tab('Visual Formula')
-                t3 = ui.tab('Graphical Analysis')
+                ui.tab('Report', label='Statistical Report')
+                ui.tab('Formula', label='Visual Formula')
+                ui.tab('Charts', label='Graphical Analysis')
 
-            with ui.tab_panels(tabs, value=t1).classes('w-full bg-slate-950 p-4 rounded-xl flex-grow overflow-auto mt-2'):
+            with ui.tab_panels(tabs, value='Report').classes('w-full bg-slate-950 p-4 rounded-xl flex-grow overflow-auto mt-2'):
                 
-                # Onglet 1 : Statistical Report rendu en balise <pre> stylisée
-                with ui.tab_panel(t1).classes('p-0'):
+                # Onglet 1 : Rapport texte (instantané)
+                with ui.tab_panel('Report'):
                     ui.html(
                         f"<pre style='margin:0; font-family: monospace; font-size: 11px; "
                         f"color: #6ee7b7; white-space: pre; line-height: 1.4;'>{full_report_text}</pre>"
                     )
 
-                # Onglet 2 : Visual Formula en <pre>
-                with ui.tab_panel(t2).classes('p-0'):
+                # Onglet 2 : Formule
+                with ui.tab_panel('Formula'):
                     ui.html(
                         f"<pre style='margin:0; font-family: monospace; font-size: 12px; "
                         f"color: #67e8f9; white-space: pre; line-height: 1.4;'>{eq}</pre>"
                     )
 
-                # Onglet 3 : Graphical Analysis
-                with ui.tab_panel(t3).classes('p-0'):
-                    with ui.column().classes('w-full items-center justify-center py-2'):
-                        b64_img = generate_summary_plots_base64(run_data)
-                        ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl rounded-lg shadow-xl')
+                # Onglet 3 : Graphiques générés en tâche de fond (run.io_bound)
+                with ui.tab_panel('Charts'):
+                    chart_area = ui.column().classes('w-full items-center justify-center')
+                    with chart_area:
+                        spinner = ui.spinner(size='lg', color='emerald')
+                    
+                    b64_img = await run.io_bound(generate_summary_plots_base64, run_data)
+                    chart_area.clear()
+                    with chart_area:
+                        if b64_img:
+                            ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl rounded-lg shadow-xl')
+                        else:
+                            ui.label("Failed to generate plots.").classes('text-red-400')
 
     dialog.open()
-
 
 @app.head('/')
 def read_head():
@@ -1723,11 +1740,11 @@ def main_page():
                             '''
                         )
 
-                        def on_open_report(e):
+                        async def on_open_report(e):
                             raw_id = str(e.args) if not isinstance(e.args, str) else e.args
                             clean_id = raw_id.replace('⭐', '').replace('★', '').strip("[]'\" ")
                             if clean_id in state.run_history:
-                                show_summary_dialog(clean_id, state)
+                                await show_summary_dialog(clean_id, state)
                             else:
                                 ui.notify(f"Run {clean_id} not found.", type='warning')
 
