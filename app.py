@@ -851,6 +851,10 @@ def main_page():
     ui.dark_mode().enable()
     
     ui.add_head_html('''
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" 
+            onload="renderMathInElement(document.body);"></script>
     <style>
         .q-btn { border-radius: 12px !important; text-transform: none !important; font-weight: 600 !important; }
         .q-field { border-radius: 14px !important; }
@@ -1750,6 +1754,7 @@ def main_page():
         with ui.tab_panel('tutorial'):
             with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-white overflow-y-auto max-h-[82vh]'):
                 ui.label('📚 Workbench Documentation & Econometric Guide').classes('text-xl font-bold text-emerald-400 mb-2')
+                
                 ui.markdown('''
 ### 1. Data Ingestion & Physical Validation
 * **Dataset Import**: Upload your CSV file (comma, semicolon, or tab delimited). Continuous columns are parsed automatically into numerical formats.
@@ -1757,42 +1762,50 @@ def main_page():
   * **Train/Test Split**: Standard ratio (e.g. 80/20) for empirical evaluation.
   * **K-Fold Cross-Validation**: Useful for smaller datasets to prevent split bias.
 * **Outlier Handling**:
-  * **Winsorization**: Caps extreme leverage points at lower/upper percentiles without shrinking sample size ($N$).
-  * **Truncation**: Filters out invalid rows beyond thermodynamic or regulatory limits.
+  * **Winsorization**: Caps extreme leverage points at lower/upper percentiles without shrinking sample size (*N*).
+  * **Truncation**: Filters out invalid rows beyond empirical or physical thresholds.
 
 ---
 
 ### 2. Algorithmic Suite & Hyperparameter Tuning
 * **EcoRETINA**:
-  * **Params Grid**: Exponents evaluated on continuous features (e.g., `[0.5, 1.0, 2.0]`).
-  * **Cross Dummy**: Enables non-linear interactions between categorical indicators and continuous variables ($\text{Dummy} \times X$).
-  * **Log & ReLU Transforms**: Uncovers diminishing marginal returns ($\ln(X)$) and policy break thresholds ($\text{ReLU}(X)$).
-  * **Covariance Matrix**: Uses HC1/HC2/HC3 robust standard errors to correct for heteroskedasticity.
+  * **Params Grid**: Exponents evaluated on continuous features (e.g. `[-1.0, 0.0, 1.0]`).
+  * **Cross Dummy**: Enables non-linear interactions between categorical indicators and continuous variables (`Dummy × X`).
+  * **Log & ReLU Transforms**: Uncovers diminishing marginal returns (`ln(X)`) and policy break thresholds (`ReLU(X)`).
+  * **Covariance Matrix**: Uses HC0 / HC1 / HC2 / HC3 robust standard errors to correct for heteroskedasticity.
 * **Linear Baselines (OLS, Lasso, Ridge, ElasticNet)**:
-  * Regularized benchmarks to test variable sparsity and shrinkage.
+  * Regularized benchmarks to test variable sparsity and parameter shrinkage.
 * **Tree-Based Ensembles (XGBoost, Random Forest)**:
-  * Flexible non-parametric estimators serving as the upper-bound accuracy benchmark.
+  * Flexible non-parametric estimators serving as the upper-bound predictive benchmark.
 * **Deep Learning (MLP Regressor)**:
-  * Multi-layer perceptron neural network with configurable hidden layer topologies and non-linear activations.
+  * Multi-layer perceptron neural network with configurable hidden layers and non-linear activations.
 
 ---
 
 ### 3. Empirical Diagnostics & Metric Interpretation
-* **Goodness-of-Fit ($R^2$ & Adjusted $R^2$)**:
-  * Evaluates out-of-sample explained variance. Compare Train vs. Test $R^2$ to monitor overfitting ($\Delta R^2 < 0.03$ indicates strong stability).
+* **Goodness-of-Fit (R² & Adjusted R²)**:
+  * Evaluates explained variance. Compare Train vs. Test R² to monitor overfitting (a gap smaller than 0.03 indicates high stability).
 * **Forecast Accuracy (RMSE & MAPE)**:
   * RMSE measures prediction scale error in target units; MAPE measures median relative percentage deviation.
 * **Residual Normality (Shapiro-Wilk Test)**:
-  * Evaluates normality on out-of-sample residuals. A $p$-value $< 0.05$ indicates structural tails or fat-tailed physical distributions.
-* **Carbon Telemetry ($R^2/\text{CO}_2$)**:
-  * Tracks operational greenhouse gas footprint (in $\text{kgCO}_2\text{eq}$) measured via CodeCarbon to quantify the computational cost of model complexity.
+  * Evaluates the distribution of out-of-sample residuals. A *p-value* > 0.05 validates the normality assumption.
+* **Carbon Telemetry (kgCO2eq)**:
+  * Tracks operational greenhouse gas footprint measured via CodeCarbon to evaluate computational efficiency.
+                ''')
 
----
-
-### 4. Econometric Elasticities & Marginal Effects
-For EcoRETINA, point elasticities and marginal derivatives are computed at the empirical sample mean ($\bar{X}$):
-$$\text{Marginal Effect} = \left.\frac{\partial \hat{Y}}{\partial X_j}\right\vert{}_{\bar{X}}, \quad \text{Elasticity (\%)} = \frac{\partial \hat{Y}}{\partial X_j} \times \frac{\bar{X}_j}{\bar{Y}}$$
-A $+1\%$ shift in regressor $X_j$ produces an estimated $\varepsilon\%$ change in target $Y$.
+                # Encadré mathématique stylisé et propre pour les élasticités
+                ui.label('4. Econometric Elasticities & Marginal Effects').classes('text-md font-bold text-slate-200 mt-4 mb-2')
+                ui.html('''
+                <div class="p-4 rounded-xl bg-slate-950/70 border border-slate-800 text-slate-300 font-mono text-xs leading-relaxed">
+                    <p class="text-emerald-400 font-bold mb-2">Evaluated at the sample mean point (X̄, Ȳ) :</p>
+                    <div class="my-2 p-2 bg-slate-900 rounded border border-slate-800 text-cyan-300">
+                        • Marginal Effect = ∂Ŷ / ∂X<sub>j</sub><br>
+                        • Elasticity (%)  = (∂Ŷ / ∂X<sub>j</sub>) × (X̄<sub>j</sub> / Ȳ)
+                    </div>
+                    <p class="text-slate-400 italic mt-2">
+                        Interpretation: A +1% change in regressor X<sub>j</sub> produces an estimated ε% variation in target Y.
+                    </p>
+                </div>
                 ''')
 
     # Restauration automatique de session si disponible
