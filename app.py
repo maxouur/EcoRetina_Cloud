@@ -120,6 +120,49 @@ def generate_summary_plots_base64(run_data):
     return base64.b64encode(buf.read()).decode('utf-8')
 
 
+def generate_prediction_plot_base64(y_true, y_pred, target_name):
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), facecolor='#0f172a')
+    fig.tight_layout(pad=3.5)
+
+    # 1. Actual vs Predicted avec intervalle de confiance
+    axes[0].scatter(y_true, y_pred, alpha=0.6, color='#38bdf8', edgecolors='none', s=25, label='Inference Points')
+    min_v, max_v = float(np.min(y_true)), float(np.max(y_true))
+    axes[0].plot([min_v, max_v], [min_v, max_v], color='#22c55e', linestyle='--', linewidth=2, label='Ideal Fit')
+    
+    std_err = float(np.std(y_true - y_pred))
+    x_line = np.linspace(min_v, max_v, 100)
+    axes[0].fill_between(x_line, x_line - 1.96 * std_err, x_line + 1.96 * std_err, color='#22c55e', alpha=0.15, label='95% Interval')
+    
+    axes[0].set_title(f'Actual vs. Predicted ({target_name})', color='white', fontsize=11, fontweight='bold')
+    axes[0].set_xlabel('Actual Values', color='white')
+    axes[0].set_ylabel('Model Predictions', color='white')
+    axes[0].tick_params(colors='white')
+    axes[0].set_facecolor('#1e293b')
+    axes[0].legend(facecolor='#0f172a', edgecolor='none', labelcolor='white', fontsize=8, loc='upper left')
+
+    # 2. Histogramme des résidus de prédiction
+    resids = y_true - y_pred
+    axes[1].hist(resids, bins=25, color='#a855f7', alpha=0.75, edgecolor='white')
+    axes[1].axvline(0, color='white', linestyle='--', alpha=0.7)
+    axes[1].set_title('Prediction Errors Distribution', color='white', fontsize=11, fontweight='bold')
+    axes[1].set_xlabel('Residual (Actual - Predicted)', color='white')
+    axes[1].tick_params(colors='white')
+    axes[1].set_facecolor('#1e293b')
+
+    # Métriques incrustées
+    stats_box = f"Mean Err: {np.mean(resids):.3f}\nStd Dev: {std_err:.3f}"
+    axes[1].text(0.95, 0.95, stats_box, transform=axes[1].transAxes, color='white', fontsize=9, ha='right', va='top',
+                 bbox=dict(facecolor='#0f172a', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.5'))
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode('utf-8')
+
 def handle_table_row_click(event, state):
     args = getattr(event, 'args', None)
     run_id = None
@@ -772,7 +815,7 @@ def execute_ml_math_core(df_input, algo, target, features, args):
     
 
 # ==========================================
-# 4. INTERFACE UTILISATEUR & GESTION MULTI-CLIENTS
+# 4. USER INTERFACE & ÉVÉNEMENTS
 # ==========================================
 
 
@@ -892,6 +935,7 @@ def main_page():
                     run_id = f"Run_{time.strftime('%H%M%S')}"
                     state.run_history[run_id] = res
                     state.latest_run_by_algo[algo] = run_id
+                    persist_session_state()
                     
                     # Évite d'accumuler plus de 5 runs en RAM
                     if len(state.run_history) > 5:
@@ -988,6 +1032,63 @@ def main_page():
         except Exception as ex:
             ui.notify(f"Import error: {str(ex)}", type='negative')
             state.log(f"Failed to load inference dataset: {str(ex)}")
+
+    def persist_session_state():
+        """Sauvegarde automatique dans app.storage.user (persistance NiceGUI)."""
+        try:
+            stored_runs = []
+            for r_id, r_data in state.run_history.items():
+                m = r_data.get('metrics', {})
+                stored_runs.append({
+                    'run_id': r_id,
+                    'algo': r_data.get('model_name'),
+                    'target_col': r_data.get('target_col'),
+                    'raw_features': r_data.get('raw_features', []),
+                    'metrics': {k: v for k, v in m.items() if isinstance(v, (int, float, str))}
+                })
+            app.storage.user['saved_runs'] = stored_runs
+        except Exception as ex:
+            print(f"[STORAGE WARNING] Failed to auto-save: {ex}")
+
+    def export_full_session_json():
+        """Télécharge un fichier JSON contenant tous les benchmarks et métriques."""
+        if not state.run_history and not state.compare_table_ui.rows:
+            return ui.notify("No session results to export!", type='warning')
+        
+        export_payload = {
+            "timestamp": datetime.now().isoformat(),
+            "table_rows": state.compare_table_ui.rows,
+            "runs": []
+        }
+        for r_id, r_data in state.run_history.items():
+            export_payload["runs"].append({
+                "run_id": r_id,
+                "model_name": r_data.get("model_name"),
+                "target_col": r_data.get("target_col"),
+                "metrics": r_data.get("metrics", {})
+            })
+
+        json_str = json.dumps(export_payload, indent=2)
+        ui.download(json_str.encode('utf-8'), f"EcoRETINA_Session_{time.strftime('%Y%m%d_%H%M%S')}.json")
+        ui.notify("Session file exported successfully!", type='positive')
+
+    async def import_session_json_from_event(e):
+        """Restaure une session sauvegardée depuis un fichier JSON."""
+        try:
+            raw_bytes = await e.file.read()
+            data = json.loads(raw_bytes.decode('utf-8'))
+            
+            # Restauration des lignes du tableau de comparaison
+            if "table_rows" in data:
+                state.compare_table_ui.rows.clear()
+                for row in data["table_rows"]:
+                    state.compare_table_ui.add_rows([row])
+                state.compare_table_ui.update()
+
+            ui.notify(f"Restored {len(data.get('table_rows', []))} runs from session backup!", type='positive')
+            state.log("Session backup loaded successfully.")
+        except Exception as ex:
+            ui.notify(f"Failed to restore session: {str(ex)}", type='negative')
 
     def toggle_split_view(strategy):
         state.split_strategy = strategy
@@ -1214,35 +1315,115 @@ def main_page():
         if runs: state.predict_run_select.value = runs[-1]
 
     def execute_inference_process():
-        if state.df_predict is None: return ui.notify("Please load an inference dataset first!", type='warning')
+        if state.df_predict is None:
+            return ui.notify("Please load an inference dataset first!", type='warning')
         run_id = state.predict_run_select.value
-        if not run_id: return ui.notify("Please select a trained model!", type='warning')
-        
-        run_data = state.run_history[run_id]
+        if not run_id:
+            return ui.notify("Please select a trained model!", type='warning')
+
+        run_data = state.run_history.get(run_id)
+        if not run_data:
+            return ui.notify(f"Run {run_id} not found in memory!", type='warning')
+
         raw_feats = run_data['raw_features']
         model = run_data['model']
         feature_names = run_data['feature_names']
         target_col = run_data['target_col']
-        
+
+        # Vérification des colonnes nécessaires
+        missing_cols = [c for c in raw_feats if c not in state.df_predict.columns]
+        if missing_cols:
+            return ui.notify(f"Missing features in prediction dataset: {missing_cols[:3]}...", type='negative')
+
         try:
-            X_new = state.df_predict[raw_feats].fillna(0).values
-            if 'const' in feature_names: X_new = sm.add_constant(X_new, has_constant='add')
+            X_new = state.df_predict[raw_feats].fillna(0).values.astype(np.float32)
+            if 'const' in feature_names:
+                X_new = sm.add_constant(X_new, has_constant='add')
+            
             preds = model.predict(pd.DataFrame(X_new, columns=feature_names))
             pred_col = f"Predicted_{target_col}_{run_id}"
             state.df_predict[pred_col] = preds
-            ui.notify(f"Predictions generated in column '{pred_col}'!")
+
+            # Évaluation out-of-sample si la variable cible est présente dans le dataset
+            eval_metrics = {}
+            if target_col in state.df_predict.columns:
+                y_true = pd.to_numeric(state.df_predict[target_col], errors='coerce').dropna().values
+                if len(y_true) == len(preds):
+                    oos_r2 = float(r2_score(y_true, preds))
+                    oos_rmse = float(np.sqrt(mean_squared_error(y_true, preds)))
+                    oos_mape = float(mean_absolute_percentage_error(y_true, preds) * 100.0)
+                    eval_metrics = {
+                        'oos_r2': oos_r2,
+                        'oos_rmse': oos_rmse,
+                        'oos_mape': oos_mape,
+                        'y_true': y_true,
+                        'preds': preds
+                    }
+                    ui.notify(f"Inference complete! Out-of-sample R²: {oos_r2:.4f} | RMSE: {oos_rmse:.2f}", type='positive')
+                else:
+                    ui.notify(f"Predictions generated in column '{pred_col}'!", type='positive')
+            else:
+                ui.notify(f"Predictions generated in column '{pred_col}'! (Target not found for OOS evaluation)", type='info')
+
+            state.last_prediction_eval = {
+                'run_id': run_id,
+                'target_col': target_col,
+                'pred_col': pred_col,
+                'metrics': eval_metrics
+            }
+
         except Exception as ex:
             ui.notify(f"Inference calculation error: {str(ex)}", type='negative')
+            print(f"[PREDICT ERROR]: {traceback.format_exc()}")
 
     def view_predict_data():
-        if state.df_predict is None: return ui.notify("No prediction dataset loaded!", type='warning')
-        with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-5/6 bg-slate-900 rounded-2xl text-white'):
-            ui.label('Predictions Overview').classes('text-md font-bold text-emerald-400')
-            ui.table(
-                columns=[{'name': c, 'label': c, 'field': c} for c in state.df_predict.columns],
-                rows=state.df_predict.head(50).to_dict('records')
-            ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
-            ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end')
+        if state.df_predict is None:
+            return ui.notify("No prediction dataset loaded!", type='warning')
+
+        last_eval = getattr(state, 'last_prediction_eval', None)
+        has_metrics = last_eval and last_eval.get('metrics') and 'oos_r2' in last_eval['metrics']
+
+        with ui.dialog() as dialog:
+            with ui.card().classes('w-11/12 max-w-5xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-2xl text-white p-4 flex flex-col'):
+                with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800'):
+                    ui.label('📊 Prediction Evaluation & Inferred Dataset').classes('text-md font-bold text-emerald-400')
+                    ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
+
+                with ui.tabs().classes('w-full text-slate-300') as p_tabs:
+                    t_eval = ui.tab('Accuracy & Charts')
+                    t_data = ui.tab('Data Table (Top 50)')
+
+                with ui.tab_panels(p_tabs, value=t_eval if has_metrics else t_data).classes('w-full bg-slate-950/60 p-4 rounded-xl flex-grow overflow-auto'):
+                    
+                    # Onglet Métriques et Graphiques
+                    with ui.tab_panel(t_eval):
+                        if has_metrics:
+                            m = last_eval['metrics']
+                            with ui.row().classes('w-full justify-around mb-4 bg-slate-900/80 p-3 rounded-xl border border-slate-800 text-center'):
+                                with ui.column().classes('items-center'):
+                                    ui.label('Out-of-Sample R²').classes('text-xs text-slate-400 uppercase font-bold')
+                                    ui.label(f"{m['oos_r2']:.4f}").classes('text-xl font-mono font-bold text-emerald-400')
+                                with ui.column().classes('items-center'):
+                                    ui.label('OOS RMSE').classes('text-xs text-slate-400 uppercase font-bold')
+                                    ui.label(f"{m['oos_rmse']:.4f}").classes('text-xl font-mono font-bold text-cyan-400')
+                                with ui.column().classes('items-center'):
+                                    ui.label('OOS MAPE').classes('text-xs text-slate-400 uppercase font-bold')
+                                    ui.label(f"{m['oos_mape']:.2f}%").classes('text-xl font-mono font-bold text-amber-400')
+
+                            plot_b64 = generate_prediction_plot_base64(m['y_true'], m['preds'], last_eval['target_col'])
+                            ui.image(f'data:image/png;base64,{plot_b64}').classes('w-full rounded-xl shadow-xl')
+                        else:
+                            ui.label('No ground truth target found in the prediction dataset to compute Out-of-Sample statistics.').classes('text-slate-400 italic text-center p-6')
+
+                    # Onglet Tableau
+                    with ui.tab_panel(t_data):
+                        clean_records = [{str(k): (f"{v:.4f}" if isinstance(v, float) else str(v)) for k, v in row.items()} 
+                                         for row in state.df_predict.head(50).to_dict('records')]
+                        ui.table(
+                            columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in state.df_predict.columns],
+                            rows=clean_records
+                        ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+
         dialog.open()
 
     def export_predicted_csv():
@@ -1259,8 +1440,20 @@ def main_page():
         with ui.row().classes('items-center gap-3'):
             ui.button('↩ Undo', on_click=apply_undo).props('flat color=white').classes('hover:bg-slate-800 rounded-xl')
             ui.button('↪ Redo', on_click=apply_redo).props('flat color=white').classes('hover:bg-slate-800 rounded-xl')
-            ui.button('🤖 AI Copilot', on_click=lambda: right_drawer.toggle()).classes('bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl font-bold shadow-lg shadow-blue-500/20')
+            
+            # Boutons de sauvegarde & restauration
+            ui.button('💾 Export Session', on_click=export_full_session_json).props('flat color=white').classes('hover:bg-slate-800 rounded-xl text-xs')
+            
+            with ui.dialog() as restore_dialog, ui.card().classes('bg-slate-900 border border-slate-700 text-white p-4 rounded-2xl'):
+                ui.label('Restore Session Backup (.json)').classes('text-base font-bold text-emerald-400 mb-2')
+                ui.upload(label='Select Backup File', on_upload=lambda e: (restore_dialog.close(), import_session_json_from_event(e))).classes('w-full rounded-xl')
+                ui.button('Cancel', on_click=restore_dialog.close).classes('mt-2 self-end rounded-xl bg-slate-800')
 
+            ui.button('📂 Restore', on_click=restore_dialog.open).props('flat color=white').classes('hover:bg-slate-800 rounded-xl text-xs')
+            
+            ui.button('🤖 AI Copilot', on_click=lambda: right_drawer.toggle()).classes('bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl font-bold shadow-lg shadow-blue-500/20')
+    
+    
     with ui.left_drawer(value=False).classes('bg-slate-900/90 backdrop-blur-md p-4 text-white rounded-r-3xl border-r border-slate-800') as left_drawer:
         ui.label('Navigation').classes('text-sm uppercase tracking-wider font-bold p-2 text-slate-400 border-b border-slate-800 w-full mb-4')
         ui.button('Main Workspace', on_click=lambda: main_tabs.set_value('workspace')).classes('w-full justify-start rounded-xl mb-2 py-3 bg-slate-800/50 hover:bg-slate-800')
@@ -1474,7 +1667,7 @@ def main_page():
 3. **Execute & Export**: Click **Run Prediction** to append a new column named `Predicted_<Target>_<RunID>` to your dataset, then view or export the enriched CSV.
                             ''')
 
-                            
+
                         with ui.row().classes('w-full gap-6'):
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('1. Load New Dataset').classes('text-sm font-bold text-slate-300 mb-2')
@@ -1546,6 +1739,22 @@ For EcoRETINA, point elasticities and marginal derivatives are computed at the e
 $$\text{Marginal Effect} = \left.\frac{\partial \hat{Y}}{\partial X_j}\right\vert{}_{\bar{X}}, \quad \text{Elasticity (\%)} = \frac{\partial \hat{Y}}{\partial X_j} \times \frac{\bar{X}_j}{\bar{Y}}$$
 A $+1\%$ shift in regressor $X_j$ produces an estimated $\varepsilon\%$ change in target $Y$.
                 ''')
+
+    # Restauration automatique de session si disponible
+    saved = app.storage.user.get('saved_runs', [])
+    if saved and not state.compare_table_ui.rows:
+        for s in saved:
+            m = s.get('metrics', {})
+            state.compare_table_ui.add_rows([{
+                'run': s.get('run_id'),
+                'algo': s.get('algo'),
+                'r2_tr': f"{m.get('r2_tr', 0):.4f}",
+                'mape_tr': f"{m.get('mape_tr', 0):.2f}%",
+                'r2_te': f"{m.get('r2_te', 0):.4f}",
+                'rmse_te': f"{m.get('rmse_te', 0):.4f}",
+                'mape_te': f"{m.get('mape_te', 0):.2f}%",
+                'co2': f"{m.get('emissions', 0):.6f}" if m.get('emissions', 0) > 0 else "N/A"
+            }])
 
     refresh_algo_param_view()
     
