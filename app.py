@@ -1178,42 +1178,54 @@ def main_page():
                         rows=clean_rows
                     ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
                     
-                with ui.tab_panel('t_stats'):
-                    num_df = state.df.select_dtypes(include=[np.number])
-                    if not num_df.empty:
-                        stats_df = num_df.describe().T[['mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
-                        stats_df.reset_index(inplace=True)
-                        stats_df.rename(columns={'index': 'Variable', '25%': 'Q1 (25%)', '50%': 'Median', '75%': 'Q3 (75%)'}, inplace=True)
-                        stats_rows = stats_df.to_dict('records')
-                        ui.table(
-                            columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in stats_df.columns],
-                            rows=stats_rows
-                        ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
-                    else:
-                        ui.label('No numeric variables found for descriptive statistics.').classes('text-slate-400')
-                        
-                with ui.tab_panel('t_charts'):
-                    num_df = state.df.select_dtypes(include=[np.number])
-                    if not num_df.empty:
-                        num_vars = min(6, len(num_df.columns))
-                        fig, axes = plt.subplots(2, 3, figsize=(10, 4), facecolor='#0f172a')
-                        axes = axes.flatten()
-                        for i, col in enumerate(num_df.columns[:num_vars]):
-                            axes[i].hist(num_df[col].dropna(), bins=20, color='#38bdf8', edgecolor='white', alpha=0.8)
-                            axes[i].set_title(col, color='white', fontsize=9)
-                            axes[i].set_facecolor('#1e293b')
-                            axes[i].tick_params(colors='white', labelsize=7)
-                        for j in range(i + 1, 6):
-                            fig.delaxes(axes[j])
-                        fig.tight_layout()
-                        
-                        buf = io.BytesIO()
-                        plt.savefig(buf, format='png', bbox_inches='tight', dpi=120)
-                        buf.seek(0)
-                        img_b64 = base64.b64encode(buf.read()).decode('utf-8')
-                        plt.close(fig)
-                        ui.html(f'<div class="flex justify-center"><img src="data:image/png;base64,{img_b64}"/></div>')
+                # 1. Rajouter 'count' (Observations N) dans le tableau descriptif
+            with ui.tab_panel('t_stats'):
+                num_df = state.df.select_dtypes(include=[np.number])
+                if not num_df.empty:
+                    stats_df = num_df.describe().T[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
+                    stats_df.reset_index(inplace=True)
+                    stats_df['count'] = stats_df['count'].astype(int)
+                    stats_df.rename(columns={'index': 'Variable', 'count': 'Obs (N)', '25%': 'Q1 (25%)', '50%': 'Median', '75%': 'Q3 (75%)'}, inplace=True)
+                    ui.table(
+                        columns=[{'name': str(c), 'label': str(c), 'field': str(c)} for c in stats_df.columns],
+                        rows=stats_df.to_dict('records')
+                    ).classes('w-full bg-slate-950 rounded-xl overflow-hidden')
+                else:
+                    ui.label('No numeric variables found.').classes('text-slate-400')
 
+            # 2. Afficher TOUTES les variables avec un scroll vertical fluide
+            with ui.tab_panel('t_charts'):
+                num_df = state.df.select_dtypes(include=[np.number])
+                if not num_df.empty:
+                    cols_list = list(num_df.columns)
+                    n_cols_total = len(cols_list)
+                    n_rows_grid = int(np.ceil(n_cols_total / 3))
+                    
+                    fig, axes = plt.subplots(n_rows_grid, 3, figsize=(11, max(3.5 * n_rows_grid, 4)), facecolor='#0f172a')
+                    axes = np.array(axes).flatten()
+                    
+                    for i, col in enumerate(cols_list):
+                        axes[i].hist(num_df[col].dropna(), bins=20, color='#38bdf8', edgecolor='white', alpha=0.8)
+                        axes[i].set_title(col, color='white', fontsize=9, fontweight='bold')
+                        axes[i].set_facecolor('#1e293b')
+                        axes[i].tick_params(colors='white', labelsize=7)
+                        
+                    for j in range(n_cols_total, len(axes)):
+                        fig.delaxes(axes[j])
+                        
+                    fig.tight_layout(pad=2.5)
+                    
+                    buf = io.BytesIO()
+                    plt.savefig(buf, format='png', bbox_inches='tight', dpi=110)
+                    plt.close(fig)
+                    buf.seek(0)
+                    img_b64 = base64.b64encode(buf.read()).decode('utf-8')
+                    
+                    # Conteneur scrollable avec hauteur fixe pour naviguer parmi tous les graphiques
+                    with ui.scroll_area().classes('w-full h-[60vh]'):
+                        ui.image(f'data:image/png;base64,{img_b64}').classes('w-full rounded-xl')
+
+                
             ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2')
         dialog.open()
 
