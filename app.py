@@ -1154,32 +1154,38 @@ def main_page():
         if state.df is None:
             return ui.notify("No dataset loaded!", type='warning')
 
-        with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl h-[85vh] bg-slate-900 rounded-2xl text-white p-4 flex flex-col'):
-            with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
+        with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-5xl bg-slate-900 rounded-2xl text-white p-4'):
+            with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800'):
                 ui.label('Dataset Preview, Descriptive Statistics & Distributions').classes('text-md font-bold text-emerald-400')
                 ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
-            with ui.tabs().classes('w-full shrink-0 text-slate-300') as view_tabs:
-                t_prev = ui.tab('t_prev', label='Preview (Top 50)')
-                t_stats = ui.tab('t_stats', label='Descriptive Statistics')
-                t_charts = ui.tab('t_charts', label='Distribution Plots')
+            with ui.tabs().classes('w-full text-slate-300') as view_tabs:
+                t_prev = ui.tab('Preview (Top 50)')
+                t_stats = ui.tab('Descriptive Statistics')
+                t_charts = ui.tab('Distribution Plots')
 
-            with ui.tab_panels(view_tabs, value='t_prev').classes('w-full flex-grow bg-transparent overflow-auto mt-2'):
+            with ui.tab_panels(view_tabs, value=t_prev).classes('w-full bg-transparent mt-2'):
                 
                 # 1. Preview Top 50
-                with ui.tab_panel('t_prev'):
+                with ui.tab_panel(t_prev):
+                    clean_cols = [{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'left', 'sortable': True} for c in state.df.columns]
                     preview_df = state.df.head(50).fillna('—')
-                    clean_rows = [{str(k): (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v)) for k, v in record.items()} 
-                                  for record in preview_df.to_dict('records')]
-                    with ui.scroll_area().classes('w-full h-[62vh]'):
-                        ui.table(
-                            columns=[{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'left'} for c in state.df.columns],
-                            rows=clean_rows,
-                            pagination={'rowsPerPage': 15}
-                        ).props('dense flat').classes('w-full bg-slate-950 text-xs')
+                    clean_rows = []
+                    for row in preview_df.to_dict('records'):
+                        clean_rows.append({
+                            str(k): (f"{v:.4f}" if isinstance(v, (float, np.floating)) else str(v))
+                            for k, v in row.items()
+                        })
+                    
+                    # ui.table direct sans scroll_area autour pour éviter le bug de hauteur 0px
+                    ui.table(
+                        columns=clean_cols,
+                        rows=clean_rows,
+                        pagination={'rowsPerPage': 15}
+                    ).props('dense flat bordered dark').classes('w-full max-h-[55vh] bg-slate-950')
 
-                # 2. Descriptive Statistics avec Obs (N)
-                with ui.tab_panel('t_stats'):
+                # 2. Descriptive Statistics (avec Obs N)
+                with ui.tab_panel(t_stats):
                     num_df = state.df.select_dtypes(include=[np.number])
                     if not num_df.empty:
                         stats_df = num_df.describe().T[['count', 'mean', 'std', 'min', '25%', '50%', '75%', 'max']].round(4)
@@ -1192,17 +1198,20 @@ def main_page():
                             '50%': 'Median', 
                             '75%': 'Q3 (75%)'
                         }, inplace=True)
-                        with ui.scroll_area().classes('w-full h-[62vh]'):
-                            ui.table(
-                                columns=[{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'center'} for c in stats_df.columns],
-                                rows=stats_df.to_dict('records'),
-                                pagination={'rowsPerPage': 15}
-                            ).props('dense flat').classes('w-full bg-slate-950 text-xs')
+
+                        stats_cols = [{'name': str(c), 'label': str(c), 'field': str(c), 'align': 'center', 'sortable': True} for c in stats_df.columns]
+                        stats_rows = [{str(k): str(v) for k, v in r.items()} for r in stats_df.to_dict('records')]
+
+                        ui.table(
+                            columns=stats_cols,
+                            rows=stats_rows,
+                            pagination={'rowsPerPage': 15}
+                        ).props('dense flat bordered dark').classes('w-full max-h-[55vh] bg-slate-950')
                     else:
                         ui.label('No numerical variables found.').classes('text-slate-400 p-4')
 
-                # 3. Distribution Plots (à la demande pour préserver la RAM)
-                with ui.tab_panel('t_charts'):
+                # 3. Distribution Plots (à la demande pour protéger la RAM)
+                with ui.tab_panel(t_charts):
                     num_df = state.df.select_dtypes(include=[np.number])
                     if not num_df.empty:
                         cols = list(num_df.columns)
@@ -1231,14 +1240,13 @@ def main_page():
 
                         with ui.row().classes('items-center gap-4 mb-2'):
                             ui.label('Select Variable:').classes('text-sm text-slate-300 font-semibold')
-                            sel = ui.select(options=cols, value=cols[0], on_change=lambda e: render_single_histogram(e.value)).classes('w-60 bg-slate-800 rounded-lg text-white')
+                            ui.select(options=cols, value=cols[0], on_change=lambda e: render_single_histogram(e.value)).classes('w-60 bg-slate-800 rounded-lg text-white')
                         
-                        # Affiche le premier histogramme par défaut
                         render_single_histogram(cols[0])
                     else:
                         ui.label('No numerical variables available to plot.').classes('text-slate-400 p-4')
 
-            ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-2 shrink-0')
+            ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-4')
 
         dialog.open()
 
