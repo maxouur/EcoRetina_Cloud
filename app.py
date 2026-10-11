@@ -156,71 +156,85 @@ def show_summary_dialog(run_id, state):
     data_rows = []
     elasticity_data = []
 
+    # Largeur normalisée à 78 caractères pour éviter tout défilement horizontal
+    LINE_SEP = "=" * 78
+    SUB_SEP = "-" * 78
+
     # 1. Performance Metrics
-    summary_lines.append("=" * 110)
-    summary_lines.append(f"{'PIPELINE PERFORMANCE METRICS':^110}")
-    summary_lines.append("=" * 110)
-    summary_lines.append(f" TRAIN -> R-squared: {metrics.get('r2_tr', 0):>8.4f} | Adj R2: {metrics.get('adj_r2_tr', 0):>8.4f} | RMSE: {metrics.get('rmse_tr', 0):>8.4f} | MAPE: {metrics.get('mape_tr', 0):>6.2f}%")
-    summary_lines.append(f" TEST  -> R-squared: {metrics.get('r2_te', 0):>8.4f} | Adj R2: {metrics.get('adj_r2_te', 0):>8.4f} | RMSE: {metrics.get('rmse_te', 0):>8.4f} | MAPE: {metrics.get('mape_te', 0):>6.2f}%")
-    summary_lines.append(f" Residuals Normality (Shapiro-Wilk) : P-Value = {metrics.get('norm_p_val', 0):.6f}")
+    summary_lines.append(LINE_SEP)
+    summary_lines.append(f"{'PIPELINE PERFORMANCE METRICS':^78}")
+    summary_lines.append(LINE_SEP)
+    summary_lines.append(
+        f" TRAIN | R²: {metrics.get('r2_tr', 0):>6.4f} | Adj R²: {metrics.get('adj_r2_tr', 0):>6.4f} | "
+        f"RMSE: {metrics.get('rmse_tr', 0):>7.3f} | MAPE: {metrics.get('mape_tr', 0):>5.2f}%"
+    )
+    summary_lines.append(
+        f" TEST  | R²: {metrics.get('r2_te', 0):>6.4f} | Adj R²: {metrics.get('adj_r2_te', 0):>6.4f} | "
+        f"RMSE: {metrics.get('rmse_te', 0):>7.3f} | MAPE: {metrics.get('mape_te', 0):>5.2f}%"
+    )
+    p_val_disp = metrics.get('norm_p_val', float('nan'))
+    p_val_str = f"{p_val_disp:.6f}" if (p_val_disp is not None and not np.isnan(p_val_disp)) else "N/A"
+    summary_lines.append(f" Residuals Normality (Shapiro-Wilk) : P-Value = {p_val_str}")
     summary_lines.append(f" Emissions (kgCO2eq)                 : {metrics.get('emissions', 0):.8f}\n")
 
     # 2. Elasticities (EcoRETINA)
     if model_name == 'EcoRETINA' and hasattr(model, 'predict'):
-        summary_lines.append("=" * 110)
-        summary_lines.append(f"{'ECONOMETRIC ELASTICITIES & MARGINAL EFFECTS AT MEAN POINT':^110}")
-        summary_lines.append("=" * 110)
-        summary_lines.append(f" {'Original Variable':<30} | {'Mean Value (X)':>18} | {'Marginal Effect (dY/dX)':>24} | {'Elasticity (%)':>18}")
-        summary_lines.append("-" * 110)
+        summary_lines.append(LINE_SEP)
+        summary_lines.append(f"{'ECONOMETRIC ELASTICITIES AT MEAN POINT':^78}")
+        summary_lines.append(LINE_SEP)
+        summary_lines.append(f" {'Variable':<26} | {'Mean (X)':>12} | {'Marginal (dY/dX)':>16} | {'Elasticity':>12}")
+        summary_lines.append(SUB_SEP)
 
         con_indices = getattr(model, 'con_cols_indices', [])
         X_raw_test = run_data.get("X_test", np.zeros((1, len(raw_features))))
         
         if con_indices and len(X_raw_test) > 0:
             X_mean_raw = np.mean(X_raw_test, axis=0, keepdims=True)
-            y_mean = np.mean(y_test) if np.mean(y_test) != 0 else 1e-9
-            y_base = model.predict(X_mean_raw)[0]
+            y_mean = float(np.mean(y_test)) if float(np.mean(y_test)) != 0.0 else 1e-9
+            y_base = float(model.predict(X_mean_raw)[0])
             delta = 1e-4
 
             for idx in con_indices:
                 feat_label = raw_features[idx] if idx < len(raw_features) else f"Var_{idx}"
-                x_val = X_mean_raw[0, idx]
-                h = x_val * delta if x_val != 0 else delta
+                x_val = float(X_mean_raw[0, idx])
+                h = x_val * delta if x_val != 0.0 else delta
                 X_pert = X_mean_raw.copy()
                 X_pert[0, idx] += h
                 try:
-                    y_pert = model.predict(X_pert)[0]
+                    y_pert = float(model.predict(X_pert)[0])
                     marginal_effect = (y_pert - y_base) / h
                     elasticity = marginal_effect * (x_val / y_mean)
                 except Exception:
                     marginal_effect, elasticity = 0.0, 0.0
 
-                summary_lines.append(f" {feat_label[:30]:<30} | {x_val:>18.4f} | {marginal_effect:>24.6f} | {elasticity:>17.4f}%")
+                summary_lines.append(f" {feat_label[:26]:<26} | {x_val:>12.4f} | {marginal_effect:>16.4f} | {elasticity:>11.2f}%")
                 elasticity_data.append({"Variable": feat_label, "Elasticity": elasticity, "MarginalEffect": marginal_effect})
         summary_lines.append("\n")
 
     # 3. Features & Coefficients
     if model_name in ['EcoRETINA', 'OLS', 'Lasso', 'Ridge', 'ElasticNet'] and (hasattr(model, 'sm_model') or hasattr(model, 'coef_')):
-        summary_lines.append("=" * 110)
-        summary_lines.append(f"{'ENGINEERED FEATURES & STATISTICAL SIGNIFICANCE':^110}")
-        summary_lines.append("=" * 110)
-        summary_lines.append(f" {'Variable':<30} | {'Coefficient':>22} | {'T-Stat':>15} | {'P-Value':>15}")
-        summary_lines.append("-" * 110)
+        summary_lines.append(LINE_SEP)
+        summary_lines.append(f"{'ENGINEERED FEATURES & STATISTICAL SIGNIFICANCE':^78}")
+        summary_lines.append(LINE_SEP)
+        summary_lines.append(f" {'Variable':<30} | {'Coefficient':>14} | {'T-Stat':>12} | {'P-Value':>12}")
+        summary_lines.append(SUB_SEP)
 
         is_sm = hasattr(model, 'sm_model')
         params_dict = model.sm_model.params if is_sm else dict(zip(feature_names, model.coef_))
         sorted_feats = sorted(feature_names, key=lambda f: abs(params_dict.get(f, 0)), reverse=True)
 
         for feat in sorted_feats:
-            coef = params_dict.get(feat, 0.0)
-            tstat = model.sm_model.tvalues.get(feat, float('nan')) if is_sm else float('nan')
-            pval = model.sm_model.pvalues.get(feat, float('nan')) if is_sm else float('nan')
-            summary_lines.append(f" {feat[:30]:<30} | {coef:>22.6f} | {tstat:>15.3f} | {pval:>15.4f}")
+            coef = float(params_dict.get(feat, 0.0))
+            tstat = float(model.sm_model.tvalues.get(feat, float('nan'))) if is_sm else float('nan')
+            pval = float(model.sm_model.pvalues.get(feat, float('nan'))) if is_sm else float('nan')
+            tstat_str = f"{tstat:>12.3f}" if not np.isnan(tstat) else f"{'N/A':>12}"
+            pval_str = f"{pval:>12.4f}" if not np.isnan(pval) else f"{'N/A':>12}"
+            summary_lines.append(f" {feat[:30]:<30} | {coef:>14.4f} | {tstat_str} | {pval_str}")
             data_rows.append({"Variable": feat, "Coefficient": coef, "T-Stat": tstat, "P-Value": pval})
     else:
-        summary_lines.append("=" * 110)
-        summary_lines.append(f"{'FEATURE IMPORTANCES (TREE-BASED / NEURAL NETWORKS)':^110}")
-        summary_lines.append("=" * 110)
+        summary_lines.append(LINE_SEP)
+        summary_lines.append(f"{'FEATURE IMPORTANCES (TREE-BASED / NEURAL NETWORKS)':^78}")
+        summary_lines.append(LINE_SEP)
         importances = []
         if model_name == 'Neural Network' and hasattr(model, 'coefs_'):
             importances = np.mean(np.abs(model.coefs_[0]), axis=1)
@@ -228,49 +242,56 @@ def show_summary_dialog(run_id, state):
             importances = model.feature_importances_
         importances = np.array(importances).flatten()
         for feat, val in sorted(zip(feature_names, importances), key=lambda x: abs(x[1]), reverse=True):
-            summary_lines.append(f" {feat[:35]:<35} | {float(val):>25.6f}")
+            summary_lines.append(f" {feat[:45]:<45} | {float(val):>28.6f}")
             data_rows.append({"Variable": feat, "Importance": val})
 
     run_data['data_rows'] = data_rows
     run_data['elasticity_data'] = elasticity_data
 
-    # Formule mathématique
+    # Formule mathématique lisible
     eq = "Y = \n"
     if hasattr(model, 'sm_model') or hasattr(model, 'coef_'):
         params = model.sm_model.params if hasattr(model, 'sm_model') else dict(zip(feature_names, model.coef_))
         intercept = getattr(model, 'intercept_', 0.0)
         if intercept != 0.0:
-            eq += f"   {intercept:.4f}\n"
+            eq += f"    {intercept:.4f}\n"
         for f in feature_names:
-            c = params.get(f, 0)
+            c = float(params.get(f, 0))
             if c != 0:
-                eq += f"   {'+' if c > 0 else '-'} {abs(c):.4f} * ({f})\n"
+                eq += f"    {'+' if c > 0 else '-'} {abs(c):.4f} * ({f})\n"
     else:
-        eq += "[Mathematical equation not applicable for Tree-based or Neural Network algorithms.]"
+        eq += "[Non-parametric algorithm: Closed-form equation not available for Trees / Neural Networks.]"
 
-    # Construction de la modale d'affichage NiceGUI
-    with ui.dialog() as dialog, ui.card().classes('w-[1100px] max-w-7xl max-h-[90vh] bg-slate-900 border border-slate-700 text-slate-100 flex flex-col'):
-        with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800'):
-            ui.label(f"📊 Detailed Analysis - {run_id} ({model_name})").classes('text-lg font-bold text-emerald-400')
-            ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
+    # Construction de la fenêtre modale NiceGUI
+    with ui.dialog() as dialog:
+        with ui.card().classes(
+            'w-11/12 max-w-4xl max-h-[88vh] bg-slate-900 border border-slate-700 text-slate-100 '
+            'flex flex-col mx-auto p-4 rounded-2xl shadow-2xl overflow-hidden'
+        ):
+            with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
+                ui.label(f"Detailed Analysis - {run_id} ({model_name})").classes('text-base font-bold text-emerald-400')
+                ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
-        with ui.tabs().classes('w-full text-slate-300') as tabs:
-            t1 = ui.tab('Statistical Report')
-            t2 = ui.tab('Visual Formula')
-            t3 = ui.tab('Graphical Analysis')
+            with ui.tabs().classes('w-full text-slate-300 shrink-0') as tabs:
+                t1 = ui.tab('Statistical Report')
+                t2 = ui.tab('Visual Formula')
+                t3 = ui.tab('Graphical Analysis')
 
-        with ui.tab_panels(tabs, value=t1).classes('w-full bg-slate-950/60 p-4 rounded-xl flex-grow overflow-auto'):
-            with ui.tab_panel(t1):
-                ui.code("\n".join(summary_lines)).classes('w-full text-xs font-mono bg-transparent text-emerald-300')
-            
-            with ui.tab_panel(t2):
-                ui.code(eq).classes('w-full text-sm font-mono bg-transparent text-cyan-300')
+            with ui.tab_panels(tabs, value=t1).classes('w-full bg-slate-950/70 p-4 rounded-xl flex-grow overflow-y-auto overflow-x-hidden mt-2'):
+                with ui.tab_panel(t1).classes('p-0'):
+                    ui.code("\n".join(summary_lines)).classes('w-full text-xs font-mono bg-transparent text-emerald-300 whitespace-pre')
 
-            with ui.tab_panel(t3):
-                b64_img = generate_summary_plots_base64(run_data)
-                ui.image(f'data:image/png;base64,{b64_img}').classes('w-full rounded-lg shadow-xl')
+                with ui.tab_panel(t2).classes('p-0'):
+                    with ui.column().classes('w-full items-center justify-center p-2'):
+                        ui.code(eq).classes('w-full text-xs font-mono bg-transparent text-cyan-300 whitespace-pre')
+
+                with ui.tab_panel(t3).classes('p-0'):
+                    with ui.column().classes('w-full items-center justify-center py-2'):
+                        b64_img = generate_summary_plots_base64(run_data)
+                        ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl rounded-lg shadow-xl')
 
     dialog.open()
+
 
 @app.head('/')
 def read_head():
@@ -511,8 +532,6 @@ def execute_ml_math_core(df_input, algo, target, features, args):
             log_level='error'
         )
         tracker.start()
-
-
     except Exception as e:
         print(f"[CODECARBON WARNING] Tracker start skipped: {e}")
     
@@ -689,19 +708,42 @@ def execute_ml_math_core(df_input, algo, target, features, args):
     duration_s = max(t_end - t_start, 0.001)
 
     if tracker is not None:
-                try:
-                    emissions = tracker.stop()
-                    if emissions is None:
-                        emissions = 0.0
-                except Exception as e:
-                    print(f"[CODECARBON WARNING] Tracker stop error: {e}")
-                    emissions = 0.0
+        try:
+            emissions = tracker.stop()
+            if emissions is None:
+                emissions = 0.0
+        except Exception as e:
+            print(f"[CODECARBON WARNING] Tracker stop error: {e}")
+            emissions = 0.0
     
     if emissions is None or np.isnan(emissions) or emissions == 0.0: 
-            power_kw = (45.0 / 1000.0) * 1.2
-            energy_kwh = power_kw * (duration_s / 3600.0)
-            emissions = float(energy_kwh * 0.385)
+        power_kw = (45.0 / 1000.0) * 1.2
+        energy_kwh = power_kw * (duration_s / 3600.0)
+        emissions = float(energy_kwh * 0.385)
+
+    # --- CALCULS MÉTRIQUES COMPLETS (TRAIN & TEST) ---
+    n_tr = len(y_train)
+    p_vars = len(features)
     
+    r2_tr = float(r2_score(y_train, y_train_pred))
+    adj_r2_tr = float(1.0 - (1.0 - r2_tr) * (n_tr - 1) / max(n_tr - p_vars - 1, 1))
+    rmse_tr = float(np.sqrt(mean_squared_error(y_train, y_train_pred)))
+    mape_tr = float(mean_absolute_percentage_error(y_train, y_train_pred) * 100.0)
+
+    n_te = len(y_test)
+    r2_te = float(r2_score(y_test, y_test_pred))
+    adj_r2_te = float(1.0 - (1.0 - r2_te) * (n_te - 1) / max(n_te - p_vars - 1, 1))
+    rmse_te = float(np.sqrt(mean_squared_error(y_test, y_test_pred)))
+    mape_te = float(mean_absolute_percentage_error(y_test, y_test_pred) * 100.0)
+
+    # Diagnostic des résidus Test (Shapiro-Wilk)
+    resid_test = y_test - y_test_pred
+    try:
+        sample_resid = resid_test if len(resid_test) <= 5000 else np.random.choice(resid_test, 5000, replace=False)
+        _, norm_p_val = stats.shapiro(sample_resid)
+        norm_p_val = float(norm_p_val)
+    except Exception:
+        norm_p_val = float('nan')
 
     return {
         'model': model, 
@@ -709,18 +751,22 @@ def execute_ml_math_core(df_input, algo, target, features, args):
         'target_col': target, 
         'raw_features': features, 
         'feature_names': feature_names_final,
+        'X_test': X_test,  # Indispensable pour les élasticités
         'y_test': y_test.tolist() if hasattr(y_test, 'tolist') else y_test, 
         'y_test_pred': y_test_pred.tolist() if hasattr(y_test_pred, 'tolist') else y_test_pred,
         'metrics': {
-            'r2_tr': float(r2_score(y_train, y_train_pred)),
-            'mape_tr': float(mean_absolute_percentage_error(y_train, y_train_pred) * 100),
-            'r2_te': float(r2_score(y_test, y_test_pred)),
-            'rmse_te': float(np.sqrt(mean_squared_error(y_test, y_test_pred))),
-            'mape_te': float(mean_absolute_percentage_error(y_test, y_test_pred) * 100),
+            'r2_tr': r2_tr,
+            'adj_r2_tr': adj_r2_tr,
+            'rmse_tr': rmse_tr,
+            'mape_tr': mape_tr,
+            'r2_te': r2_te,
+            'adj_r2_te': adj_r2_te,
+            'rmse_te': rmse_te,
+            'mape_te': mape_te,
+            'norm_p_val': norm_p_val,
             'emissions': emissions
         }
     }
-
 
     
     
@@ -1420,7 +1466,15 @@ def main_page():
                 with ui.tab_panel('t_predict'):
                     with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl'):
                         ui.label('Prediction on New Dataset').classes('text-md uppercase tracking-wider font-bold text-emerald-400 mb-4')
-                        
+
+                        with ui.expansion('📖 How to Use the Predict Engine & Format Requirements', icon='help_outline').classes('w-full bg-slate-950/50 border border-slate-800 rounded-xl mb-4 text-slate-300'):
+                            ui.markdown('''
+1. **Upload Target Data**: The new CSV dataset must contain the same raw explanatory column names ($X$) that were used during model training. Missing values will automatically be filled with zeroes.
+2. **Select Saved Model**: Choose an active run from the dropdown list.
+3. **Execute & Export**: Click **Run Prediction** to append a new column named `Predicted_<Target>_<RunID>` to your dataset, then view or export the enriched CSV.
+                            ''')
+
+                            
                         with ui.row().classes('w-full gap-6'):
                             with ui.card().classes('w-[48%] bg-slate-950/40 p-4 rounded-xl border border-slate-800'):
                                 ui.label('1. Load New Dataset').classes('text-sm font-bold text-slate-300 mb-2')
@@ -1446,9 +1500,52 @@ def main_page():
                 state.logs_area.content = "<br>".join(state.logs)
 
         with ui.tab_panel('tutorial'):
-            with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-white'):
-                ui.label('Tutorial').classes('text-lg font-bold text-emerald-400 mb-4')
-                ui.markdown("# EcoRETINA ML Workbench - User Guide")
+            with ui.card().classes('w-full bg-slate-900/60 border border-slate-800 p-6 rounded-2xl shadow-xl text-white overflow-y-auto max-h-[82vh]'):
+                ui.label('📚 Workbench Documentation & Econometric Guide').classes('text-xl font-bold text-emerald-400 mb-2')
+                ui.markdown('''
+### 1. Data Ingestion & Physical Validation
+* **Dataset Import**: Upload your CSV file (comma, semicolon, or tab delimited). Continuous columns are parsed automatically into numerical formats.
+* **Sampling Strategy**:
+  * **Train/Test Split**: Standard ratio (e.g. 80/20) for empirical evaluation.
+  * **K-Fold Cross-Validation**: Useful for smaller datasets to prevent split bias.
+* **Outlier Handling**:
+  * **Winsorization**: Caps extreme leverage points at lower/upper percentiles without shrinking sample size ($N$).
+  * **Truncation**: Filters out invalid rows beyond thermodynamic or regulatory limits.
+
+---
+
+### 2. Algorithmic Suite & Hyperparameter Tuning
+* **EcoRETINA**:
+  * **Params Grid**: Exponents evaluated on continuous features (e.g., `[0.5, 1.0, 2.0]`).
+  * **Cross Dummy**: Enables non-linear interactions between categorical indicators and continuous variables ($\text{Dummy} \times X$).
+  * **Log & ReLU Transforms**: Uncovers diminishing marginal returns ($\ln(X)$) and policy break thresholds ($\text{ReLU}(X)$).
+  * **Covariance Matrix**: Uses HC1/HC2/HC3 robust standard errors to correct for heteroskedasticity.
+* **Linear Baselines (OLS, Lasso, Ridge, ElasticNet)**:
+  * Regularized benchmarks to test variable sparsity and shrinkage.
+* **Tree-Based Ensembles (XGBoost, Random Forest)**:
+  * Flexible non-parametric estimators serving as the upper-bound accuracy benchmark.
+* **Deep Learning (MLP Regressor)**:
+  * Multi-layer perceptron neural network with configurable hidden layer topologies and non-linear activations.
+
+---
+
+### 3. Empirical Diagnostics & Metric Interpretation
+* **Goodness-of-Fit ($R^2$ & Adjusted $R^2$)**:
+  * Evaluates out-of-sample explained variance. Compare Train vs. Test $R^2$ to monitor overfitting ($\Delta R^2 < 0.03$ indicates strong stability).
+* **Forecast Accuracy (RMSE & MAPE)**:
+  * RMSE measures prediction scale error in target units; MAPE measures median relative percentage deviation.
+* **Residual Normality (Shapiro-Wilk Test)**:
+  * Evaluates normality on out-of-sample residuals. A $p$-value $< 0.05$ indicates structural tails or fat-tailed physical distributions.
+* **Carbon Telemetry ($R^2/\text{CO}_2$)**:
+  * Tracks operational greenhouse gas footprint (in $\text{kgCO}_2\text{eq}$) measured via CodeCarbon to quantify the computational cost of model complexity.
+
+---
+
+### 4. Econometric Elasticities & Marginal Effects
+For EcoRETINA, point elasticities and marginal derivatives are computed at the empirical sample mean ($\bar{X}$):
+$$\text{Marginal Effect} = \left.\frac{\partial \hat{Y}}{\partial X_j}\right\vert{}_{\bar{X}}, \quad \text{Elasticity (\%)} = \frac{\partial \hat{Y}}{\partial X_j} \times \frac{\bar{X}_j}{\bar{Y}}$$
+A $+1\%$ shift in regressor $X_j$ produces an estimated $\varepsilon\%$ change in target $Y$.
+                ''')
 
     refresh_algo_param_view()
     
