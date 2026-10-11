@@ -200,7 +200,6 @@ def show_summary_dialog(run_id, state):
     model = run_data.get("model")
     model_name = run_data.get("model_name", "Unknown")
     feature_names = run_data.get("feature_names", [])
-    raw_features = run_data.get("raw_features", [])
     metrics = run_data.get("metrics", {})
     y_test = run_data.get("y_test", [])
 
@@ -220,6 +219,7 @@ def show_summary_dialog(run_id, state):
         f" TEST  | R²: {metrics.get('r2_te', 0):>6.4f} | Adj R²: {metrics.get('adj_r2_te', 0):>6.4f} | "
         f"RMSE: {metrics.get('rmse_te', 0):>7.3f} | MAPE: {metrics.get('mape_te', 0):>5.2f}%"
     )
+    
     p_val_disp = metrics.get('norm_p_val', None)
     try:
         p_val_str = f"{float(p_val_disp):.6f}" if (p_val_disp is not None and not np.isnan(float(p_val_disp))) else "N/A"
@@ -228,91 +228,99 @@ def show_summary_dialog(run_id, state):
     summary_lines.append(f" Residuals Normality (Shapiro-Wilk) : P-Value = {p_val_str}")
     summary_lines.append(f" Emissions (kgCO2eq)                 : {metrics.get('emissions', 0):.8f}\n")
 
-    # 2. Features & Coefficients (support Scikit-Learn ET Statsmodels)
+    # 2. Features & Coefficients / Importances
     summary_lines.append(LINE_SEP)
-    summary_lines.append(f"{'ENGINEERED FEATURES & COEFFICIENTS':^78}")
+    summary_lines.append(f"{'MODEL PARAMETERS & FEATURES':^78}")
     summary_lines.append(LINE_SEP)
-    summary_lines.append(f" {'Variable':<32} | {'Coefficient':>14} | {'T-Stat':>12} | {'P-Value':>12}")
-    summary_lines.append(SUB_SEP)
 
+    coef_map = {}
     try:
-        coef_map = {}
-        tstat_map = {}
-        pval_map = {}
-
         if hasattr(model, 'sm_model') and model.sm_model is not None:
             sm_res = model.sm_model
             coef_map = dict(sm_res.params)
             tstat_map = dict(getattr(sm_res, 'tvalues', {}))
             pval_map = dict(getattr(sm_res, 'pvalues', {}))
+            summary_lines.append(f" {'Variable':<32} | {'Coefficient':>14} | {'T-Stat':>12} | {'P-Value':>12}")
+            summary_lines.append(SUB_SEP)
+            for feat in feature_names:
+                c_val = float(coef_map.get(feat, 0.0))
+                t_val = tstat_map.get(feat, None)
+                p_val = pval_map.get(feat, None)
+                t_str = f"{float(t_val):>12.3f}" if (t_val is not None and not np.isnan(float(t_val))) else f"{'N/A':>12}"
+                p_str = f"{float(p_val):>12.4f}" if (p_val is not None and not np.isnan(float(p_val))) else f"{'N/A':>12}"
+                summary_lines.append(f" {str(feat)[:32]:<32} | {c_val:>14.4f} | {t_str} | {p_str}")
+
         elif hasattr(model, 'coef_'):
             coef_arr = np.array(model.coef_).flatten()
             for fn, c in zip(feature_names, coef_arr):
                 coef_map[fn] = c
+            summary_lines.append(f" {'Variable':<40} | {'Coefficient':>25}")
+            summary_lines.append(SUB_SEP)
+            for fn in feature_names:
+                summary_lines.append(f" {str(fn)[:40]:<40} | {float(coef_map.get(fn, 0.0)):>25.4f}")
 
-        if not coef_map and hasattr(model, 'params'):
-            coef_map = dict(model.params)
-
-        for feat in feature_names:
-            c_val = float(coef_map.get(feat, 0.0))
-            t_val = tstat_map.get(feat, None)
-            p_val = pval_map.get(feat, None)
-
-            t_str = f"{float(t_val):>12.3f}" if (t_val is not None and not np.isnan(float(t_val))) else f"{'N/A':>12}"
-            p_str = f"{float(p_val):>12.4f}" if (p_val is not None and not np.isnan(float(p_val))) else f"{'N/A':>12}"
-            summary_lines.append(f" {str(feat)[:32]:<32} | {c_val:>14.4f} | {t_str} | {p_str}")
+        elif hasattr(model, 'feature_importances_'):
+            imps = np.array(model.feature_importances_).flatten()
+            summary_lines.append(f" {'Variable':<40} | {'Importance':>25}")
+            summary_lines.append(SUB_SEP)
+            for fn, imp in zip(feature_names, imps):
+                summary_lines.append(f" {str(fn)[:40]:<40} | {float(imp):>25.4f}")
+        else:
+            summary_lines.append(" Model parameters are stored in non-standard tabular format.")
     except Exception as ex:
-        summary_lines.append(f" [Coefficients extraction error: {ex}]")
+        summary_lines.append(f" [Coefficients extraction: {ex}]")
 
     summary_lines.append("\n")
 
-    # Formule mathématique simplifiée
+    # 3. Formule mathématique simplifiée
     eq = "Y = \n"
     intercept = getattr(model, 'intercept_', None)
     if intercept is not None:
-        eq += f"    {float(intercept):.4f}\n"
+        try:
+            eq += f"    {float(np.array(intercept).flatten()[0]):.4f}\n"
+        except Exception:
+            pass
     for f in feature_names:
         c = float(coef_map.get(f, 0.0))
         if abs(c) > 1e-9:
             eq += f"    {'+' if c >= 0 else '-'} {abs(c):.4f} * ({f})\n"
+    if eq.strip() == "Y =":
+        eq += "    [Non-linear or tree-based structure: no direct closed-form linear equation]"
 
     full_report_text = "\n".join(summary_lines)
 
-    # Affichage immédiat et stable
-    with ui.dialog() as dialog:
-        with ui.card().classes('w-11/12 max-w-4xl h-[85vh] bg-slate-900 border border-slate-700 text-slate-100 flex flex-col mx-auto p-4 rounded-2xl shadow-2xl overflow-hidden'):
-            with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800 shrink-0'):
-                ui.label(f"Detailed Analysis - {run_id} ({model_name})").classes('text-base font-bold text-emerald-400')
-                ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
+    # 4. Interface Quasar / NiceGUI stable
+    with ui.dialog() as dialog, ui.card().classes('w-11/12 max-w-4xl bg-slate-900 border border-slate-700 text-slate-100 p-4 rounded-2xl'):
+        with ui.row().classes('w-full justify-between items-center pb-2 border-b border-slate-800'):
+            ui.label(f"Detailed Analysis - {run_id} ({model_name})").classes('text-base font-bold text-emerald-400')
+            ui.button(icon='close', on_click=dialog.close).props('flat round dense').classes('text-slate-400 hover:text-white')
 
-            with ui.tabs().classes('w-full text-slate-300 shrink-0') as tabs:
-                t_rep = ui.tab('t_rep', label='Statistical Report')
-                t_form = ui.tab('t_form', label='Visual Formula')
-                t_diag = ui.tab('t_diag', label='Graphical Analysis')
+        with ui.tabs().classes('w-full text-slate-300') as tabs:
+            t_rep = ui.tab('Statistical Report')
+            t_form = ui.tab('Visual Formula')
+            t_diag = ui.tab('Graphical Analysis')
 
-            with ui.tab_panels(tabs, value='t_rep').classes('w-full bg-slate-950 p-4 rounded-xl flex-grow overflow-auto mt-2'):
-                
-                # Panneau 1 : Rapport texte (garanti visible)
-                with ui.tab_panel('t_rep'):
-                    with ui.scroll_area().classes('w-full h-[62vh]'):
-                        ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 11px; color: #6ee7b7; white-space: pre; line-height: 1.4;'>{full_report_text}</pre>")
+        with ui.tab_panels(tabs, value=t_rep).classes('w-full bg-slate-950 p-4 rounded-xl mt-2 max-h-[65vh] overflow-y-auto'):
+            
+            # Onglet 1 : Rapport texte (balise pre directe)
+            with ui.tab_panel(t_rep):
+                ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 11px; color: #6ee7b7; white-space: pre-wrap; word-break: break-all; line-height: 1.4;'>{full_report_text}</pre>")
 
-                # Panneau 2 : Formule
-                with ui.tab_panel('t_form'):
-                    with ui.scroll_area().classes('w-full h-[62vh]'):
-                        ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 12px; color: #67e8f9; white-space: pre; line-height: 1.4;'>{eq}</pre>")
+            # Onglet 2 : Formule
+            with ui.tab_panel(t_form):
+                ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 12px; color: #67e8f9; white-space: pre-wrap; line-height: 1.4;'>{eq}</pre>")
 
-                # Panneau 3 : Diagnostic graphique
-                with ui.tab_panel('t_diag'):
-                    b64_img = generate_summary_plots_base64(run_data)
-                    if b64_img:
-                        with ui.scroll_area().classes('w-full h-[62vh]'):
-                            ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl mx-auto rounded-lg shadow-xl')
-                    else:
-                        ui.label("No plots available or generation skipped.").classes('text-slate-400 p-4')
+            # Onglet 3 : Graphiques
+            with ui.tab_panel(t_diag):
+                b64_img = generate_summary_plots_base64(run_data)
+                if b64_img:
+                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl mx-auto rounded-lg shadow-xl')
+                else:
+                    ui.label("No plots available or generation skipped.").classes('text-slate-400 p-4')
+
+        ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-3')
 
     dialog.open()
-    
 
 @app.head('/')
 def read_head():
