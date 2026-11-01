@@ -272,19 +272,32 @@ def show_summary_dialog(run_id, state):
 
     summary_lines.append("\n")
 
-    # 3. Formule mathématique simplifiée
-    eq = "Y = \n"
-    intercept = getattr(model, 'intercept_', None)
-    if intercept is not None:
-        try:
-            eq += f"    {float(np.array(intercept).flatten()[0]):.4f}\n"
-        except Exception:
-            pass
-    for f in feature_names:
-        c = float(coef_map.get(f, 0.0))
+    # 3. Formule mathématique robuste pour OLS et modèles linéaires
+    eq = f"{state.target_var or 'Y'} = \n"
+    
+    # Récupération propre de l'intercept
+    intercept_val = None
+    if hasattr(model, 'intercept_'):
+        inter_arr = np.array(model.intercept_).flatten()
+        if len(inter_arr) > 0:
+            intercept_val = float(inter_arr[0])
+    elif hasattr(model, 'sm_model') and hasattr(model.sm_model, 'params'):
+        if 'const' in model.sm_model.params:
+            intercept_val = float(model.sm_model.params['const'])
+        elif 'Intercept' in model.sm_model.params:
+            intercept_val = float(model.sm_model.params['Intercept'])
+
+    if intercept_val is not None:
+        eq += f"    {intercept_val:.4f}\n"
+
+    # Récupération propre des coefficients pour chaque variable
+    for feat in feature_names:
+        c = float(coef_map.get(feat, 0.0))
         if abs(c) > 1e-9:
-            eq += f"    {'+' if c >= 0 else '-'} {abs(c):.4f} * ({f})\n"
-    if eq.strip() == "Y =":
+            sign = "+" if c >= 0 else "-"
+            eq += f"    {sign} {abs(c):.4f} * ({feat})\n"
+
+    if eq.strip() == f"{state.target_var or 'Y'} =":
         eq += "    [Non-linear or tree-based structure: no direct closed-form linear equation]"
 
     full_report_text = "\n".join(summary_lines)
@@ -310,13 +323,29 @@ def show_summary_dialog(run_id, state):
             with ui.tab_panel(t_form):
                 ui.html(f"<pre style='margin:0; font-family: monospace; font-size: 12px; color: #67e8f9; white-space: pre-wrap; line-height: 1.4;'>{eq}</pre>")
 
-            # Onglet 3 : Graphiques
+            # Onglet 3 : Graphiques + Tableau des Features
             with ui.tab_panel(t_diag):
                 b64_img = generate_summary_plots_base64(run_data)
                 if b64_img:
-                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl mx-auto rounded-lg shadow-xl')
-                else:
-                    ui.label("No plots available or generation skipped.").classes('text-slate-400 p-4')
+                    ui.image(f'data:image/png;base64,{b64_img}').classes('w-full max-w-3xl mx-auto rounded-lg shadow-xl mb-4')
+                
+                # Tableau récapitulatif des variables demandé par Teo
+                if coef_map:
+                    ui.label('Model Estimated Parameters & Statistics').classes('text-sm font-bold text-slate-300 mt-2 mb-1')
+                    summary_table_data = []
+                    for fn in feature_names:
+                        c_val = float(coef_map.get(fn, 0.0))
+                        t_val = tstat_map.get(fn, None) if 'tstat_map' in locals() else None
+                        p_val = pval_map.get(fn, None) if 'pval_map' in locals() else None
+                        row = {'Variable': str(fn), 'Coefficient': f"{c_val:.4f}"}
+                        if t_val is not None:
+                            row['T-Stat'] = f"{float(t_val):.3f}"
+                        if p_val is not None:
+                            row['P-Value'] = f"{float(p_val):.4f}"
+                        summary_table_data.append(row)
+
+                    col_defs = [{'name': k, 'label': k, 'field': k, 'align': 'center'} for k in summary_table_data[0].keys()]
+                    ui.table(columns=col_defs, rows=summary_table_data, pagination={'rowsPerPage': 10}).props('dense flat bordered dark').classes('w-full bg-slate-900 text-xs')
 
         ui.button('Close', on_click=dialog.close).classes('bg-slate-800 rounded-xl self-end mt-3')
 
@@ -839,6 +868,27 @@ def main_page():
         .q-panel { border-radius: 20px !important; }
     </style>
     ''')
+
+    with ui.column().classes('w-full max-w-7xl mx-auto p-4'):
+        with ui.row().classes('w-full justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 shadow-lg'):
+            with ui.column().classes('gap-1'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.label('Eco-RETINA Research Workbench').classes('text-xl font-bold text-emerald-400')
+                    ui.badge('v1.0 Cloud', color='emerald').props('outline')
+                ui.label('Econometric AI, Causal Inference & Sustainable Machine Learning').classes('text-xs text-slate-400')
+            
+            with ui.column().classes('items-end gap-1'):
+                ui.label('Authors & Research Leads:').classes('text-[11px] font-semibold text-slate-400 uppercase tracking-wider')
+                
+                # Maxime Elek
+                with ui.row().classes('items-center gap-2'):
+                    ui.label('Maxime Elek').classes('text-xs font-semibold text-slate-200')
+                    ui.link('maxime.elek@gmail.com', 'mailto:maxime.elek@gmail.com').classes('text-xs text-emerald-400 hover:underline font-mono')
+                    
+                # Jules
+                with ui.row().classes('items-center gap-2'):
+                    ui.label('Jules Bernadac').classes('text-xs font-semibold text-slate-200')
+                    ui.link('jules.bernadac@gmail.com', 'mailto:jules.bernadac@gmail.com').classes('text-xs text-emerald-400 hover:underline font-mono')
 
     async def trigger_pipeline_execution():
                 try:
